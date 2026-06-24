@@ -17,50 +17,57 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, 
 (function(){
   var l = document.createElement('link');
   l.rel = 'stylesheet';
-  l.href = 'https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap';
+  l.href = 'https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Sora:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap';
   document.head.appendChild(l);
 })();
 </script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
-html,body{background:#F4F3EE;font-family:'Inter',system-ui,sans-serif;-webkit-text-size-adjust:100%;color:#1C2823;}
+html,body{background:#F1EEE6;font-family:'Inter',system-ui,sans-serif;-webkit-text-size-adjust:100%;color:#15233A;}
 input,select,textarea{font-family:inherit;font-size:16px;color:#1C2823;-webkit-appearance:none;appearance:none;}
 select{cursor:pointer;}
 button{-webkit-tap-highlight-color:transparent;cursor:pointer;border:none;background:none;font-family:inherit;color:inherit;}
 .mono{font-family:'IBM Plex Mono',monospace;}
 .disp{font-family:'Sora',sans-serif;}
+.brand{font-family:'Cinzel',Georgia,serif;}
 .screen{display:none;}.screen.active{display:block;}
 .page{max-width:640px;margin:0 auto;padding:16px 16px 120px;}
-.hdr{background:#0E5A55;color:#fff;padding:18px 16px 14px;display:flex;justify-content:space-between;align-items:flex-start;}
-.hdr-title{font-family:'Sora',sans-serif;font-size:20px;font-weight:700;letter-spacing:.05em;}
-.hdr-sub{font-family:'IBM Plex Mono',monospace;font-size:13px;opacity:.8;margin-top:3px;}
-.nav{background:#0A423E;display:flex;}
-.nav-btn{flex:1;padding:11px 0;font-family:'Sora',sans-serif;font-weight:600;font-size:14px;color:#fff;opacity:.55;border:none;border-bottom:3px solid transparent;background:transparent;cursor:pointer;}
-.nav-btn.active{opacity:1;border-bottom-color:#fff;}
-.card{background:#fff;border:1px solid #DCD8CC;border-radius:12px;padding:16px;margin-bottom:16px;}
-.card-ivory{background:#EDE6D4;border:1px solid #DCD8CC;border-radius:12px;padding:16px;margin-bottom:16px;}
-.inp{width:100%;padding:12px 14px;border-radius:10px;border:1px solid #DCD8CC;background:#fff;font-size:16px;font-family:inherit;color:#1C2823;outline:none;display:block;margin-bottom:14px;}
+.hdr{background:#0E2342;color:#F6F2E8;padding:22px 16px 16px;position:relative;text-align:center;}
+.hdr-gear{position:absolute;top:20px;right:16px;color:#D4AF52;font-size:22px;opacity:1;}
+.hdr-seam{height:2px;background:linear-gradient(90deg,#0E2342,#C9A24B,#0E2342);}
+.brand-name{font-family:'Cinzel',Georgia,serif;font-size:24px;font-weight:600;letter-spacing:.12em;color:#F6F2E8;line-height:1.1;}
+.brand-rule{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:11px;}
+.brand-rule .ln{width:40px;height:1px;background:#C9A24B;opacity:.7;}
+.brand-sub{font-size:10px;letter-spacing:.42em;color:#C9A24B;font-weight:600;font-family:'Sora',sans-serif;}
+.hdr-title{font-family:'Cinzel',Georgia,serif;font-size:24px;font-weight:600;letter-spacing:.12em;}
+.hdr-sub{font-size:10px;letter-spacing:.42em;color:#C9A24B;opacity:1;margin-top:3px;}
+.nav{background:#0A1B33;display:flex;}
+.nav-btn{flex:1;padding:11px 0;font-family:'Sora',sans-serif;font-weight:600;font-size:14px;color:#F6F2E8;opacity:.5;border:none;border-bottom:3px solid transparent;background:transparent;cursor:pointer;}
+.nav-btn.active{opacity:1;border-bottom-color:#C9A24B;}
+.card{background:#fff;border:1px solid #EAE3D2;border-radius:13px;padding:16px;margin-bottom:16px;}
+.card-ivory{background:#FBF4DD;border:1px solid #E6D6A4;border-radius:13px;padding:16px;margin-bottom:16px;}
+.inp{width:100%;padding:12px 14px;border-radius:10px;border:1px solid #E0D8C4;background:#fff;font-size:16px;font-family:inherit;color:#15233A;outline:none;display:block;margin-bottom:14px;}
 .inp-amber{border-color:#9A6A14!important;background:#FBF4E4!important;}
 textarea.inp{resize:vertical;}
 .lbl{font-family:'Sora',sans-serif;font-size:11px;font-weight:600;color:#6B746E;letter-spacing:.5px;text-transform:uppercase;margin-bottom:4px;display:block;}
 .field{margin-bottom:4px;}
 .btn{padding:14px 0;border-radius:12px;font-family:'Sora',sans-serif;font-weight:600;font-size:15px;cursor:pointer;border:none;width:100%;display:block;text-align:center;}
-.btn-teal{background:#0E5A55;color:#fff;}
+.btn-teal{background:#0E2342;color:#F6F2E8;border-bottom:2px solid #C9A24B;}
 .btn-red{background:#A93B2A;color:#fff;}
-.btn-outline{background:#fff;color:#0E5A55;border:1.5px solid #0E5A55;}
-.btn-ghost{background:#fff;color:#6B746E;border:1px solid #DCD8CC;}
+.btn-outline{background:#fff;color:#0E2342;border:1.5px solid #0E2342;}
+.btn-ghost{background:#fff;color:#6E7681;border:1px solid #E0D8C4;}
 .btn-sm{padding:10px 16px;font-size:14px;border-radius:8px;font-family:'Sora',sans-serif;font-weight:600;cursor:pointer;border:none;}
 .g2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
 .g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;}
 .alert-red{background:#F7E3DE;border:2px solid #A93B2A;border-radius:12px;padding:16px;margin-bottom:16px;}
-.alert-teal{background:#EDF5F0;border:2px solid #0E5A55;border-radius:12px;padding:16px;margin-bottom:16px;}
-.alert-ivory{background:#EDE6D4;border:1px solid #DCD8CC;border-radius:12px;padding:16px;margin-bottom:16px;}
+.alert-teal{background:#EEF1F7;border:2px solid #0E2342;border-radius:12px;padding:16px;margin-bottom:16px;}
+.alert-ivory{background:#FBF4DD;border:1px solid #E6D6A4;border-radius:12px;padding:16px;margin-bottom:16px;}
 .err-bar{margin:12px 16px 0;padding:12px 16px;border-radius:8px;background:#F7E8E4;color:#A93B2A;border:1px solid #A93B2A;font-size:14px;}
-.ord-card{width:100%;text-align:left;background:#fff;border:1px solid #DCD8CC;border-radius:12px;padding:16px;margin-bottom:12px;cursor:pointer;display:block;}
+.ord-card{width:100%;text-align:left;background:#fff;border:1px solid #EAE3D2;border-radius:13px;padding:16px;margin-bottom:12px;cursor:pointer;display:block;}
 .tog{flex:1;padding:10px 0;border-radius:8px;font-family:'Sora',sans-serif;font-weight:600;font-size:14px;cursor:pointer;border:1px solid #DCD8CC;}
 .badge{font-family:'IBM Plex Mono',monospace;font-size:12px;padding:2px 8px;border-radius:999px;display:inline-block;}
 .fdi-cell{width:28px;height:28px;min-width:28px;font-size:10.5px;border-radius:5px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-family:'IBM Plex Mono',monospace;cursor:pointer;border:1px solid #DCD8CC;background:#fff;color:#555;}
-.fdi-cell.on{background:#0E5A55;color:#fff;border-color:#0E5A55;font-weight:600;}
+.fdi-cell.on{background:#0E2342;color:#F6F2E8;border-color:#0E2342;font-weight:600;}
 .fdi-cell.ro{cursor:default;}
 .fdi-sep{width:1px;height:22px;background:#999;flex-shrink:0;margin:0 4px;}
 .overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:900;display:flex;align-items:center;justify-content:center;padding:24px;}
@@ -76,12 +83,11 @@ textarea.inp{resize:vertical;}
 <body>
 <div id="app">
   <header class="hdr">
-    <div>
-      <div class="hdr-title disp">SD OrdreFlyt</div>
-      <div class="hdr-sub">Sarpsborg Dental AS</div>
-    </div>
-    <button id="btn-settings" style="color:#fff;font-size:22px;opacity:.85;margin-top:2px;">&#9881;</button>
+    <div class="brand-name">Sarpsborg Dental</div>
+    <div class="brand-rule"><span class="ln"></span><span class="brand-sub">SD ORDREFLYT</span><span class="ln"></span></div>
+    <button id="btn-settings" class="hdr-gear" aria-label="Innstillinger">&#9881;&#65038;</button>
   </header>
+  <div class="hdr-seam"></div>
   <nav class="nav">
     <button class="nav-btn active" data-nav="capture">Ny ordre</button>
     <button class="nav-btn" data-nav="dagsorden">Dagsorden</button>
@@ -91,8 +97,8 @@ textarea.inp{resize:vertical;}
 
   <div id="screen-capture" class="screen active">
     <div class="page">
-      <div class="card" style="text-align:center;border:1.5px dashed #0E5A55;">
-        <div class="disp" style="font-size:18px;font-weight:600;color:#0E5A55;">Fotografer bestillingsseddelen</div>
+      <div class="card" style="text-align:center;border:1.5px dashed #0E2342;">
+        <div class="disp" style="font-size:18px;font-weight:600;color:#0E2342;">Fotografer bestillingsseddelen</div>
         <p style="font-size:14px;color:#6B746E;margin:8px 0 20px;">Ta bilde med kameraet eller velg fra bildebiblioteket. Inntil 3 bilder per ordre.</p>
         <input type="file" accept="image/*" multiple id="file-input" style="display:none;">
         <label for="file-input" class="btn btn-teal" style="display:inline-block;width:auto;padding:14px 32px;cursor:pointer;">&#128247; Velg bilde</label>
@@ -105,7 +111,7 @@ textarea.inp{resize:vertical;}
       </div>
       <p style="font-size:12px;color:#6B746E;margin-top:20px;line-height:1.6;">Prototype: Fulle navn gjøres automatisk om til initialer; pasientnumre overtas nøyaktig.</p>
       <div style="margin-top:14px;">
-        <button id="btn-diag" style="font-size:12px;font-weight:600;text-decoration:underline;color:#0E5A55;">&#9881; Test KI-tilkoblingen</button>
+        <button id="btn-diag" style="font-size:12px;font-weight:600;text-decoration:underline;color:#0E2342;">&#9881; Test KI-tilkoblingen</button>
         <pre id="diag-out" class="mono" style="display:none;font-size:12px;margin-top:8px;padding:12px;border-radius:8px;background:#fff;border:1px solid #DCD8CC;white-space:pre-wrap;"></pre>
       </div>
     </div>
@@ -115,7 +121,7 @@ textarea.inp{resize:vertical;}
   <div id="screen-list" class="screen">
     <div class="page">
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
-        <button id="btn-export" class="btn-sm" style="background:#fff;color:#0E5A55;border:1px solid #0E5A55;">&#8595; Eksporter (JSON)</button><button id="btn-learnlog" class="btn-sm" style="background:#fff;color:#9A6A14;border:1px solid #9A6A14;">&#9881; L&aelig;ringslogg</button>
+        <button id="btn-export" class="btn-sm" style="background:#fff;color:#0E2342;border:1px solid #0E2342;">&#8595; Eksporter (JSON)</button><button id="btn-learnlog" class="btn-sm" style="background:#fff;color:#9A6A14;border:1px solid #9A6A14;">&#9881; L&aelig;ringslogg</button>
         <label class="btn-sm" style="background:#fff;color:#6B746E;border:1px solid #DCD8CC;cursor:pointer;">&#8593; Importer backup<input type="file" accept=".json,application/json,text/plain,text/json" id="import-input" style="display:none;"></label>
       </div>
       <input class="inp" id="search-inp" placeholder="Søk: tannlege, pasientnr., arbeid ..." style="margin-bottom:16px;">
@@ -155,7 +161,7 @@ textarea.inp{resize:vertical;}
 
 <div class="sheet" id="export-sheet" style="display:none;">
   <div class="sheet-body">
-    <div class="disp" id="export-title" style="font-weight:700;color:#0E5A55;margin-bottom:4px;">Sikkerhetskopi</div>
+    <div class="disp" id="export-title" style="font-weight:700;color:#0E2342;margin-bottom:4px;">Sikkerhetskopi</div>
     <p id="export-hint" style="font-size:12px;color:#6B746E;margin-bottom:12px;">Inkluderer ordrer og bilder av seddlene. Last ned filen og lagre den i Filer, iCloud eller Dropbox. Da kan alt hentes inn igjen senere.</p>
     <button class="btn btn-teal" id="export-download" style="width:100%;padding:14px 0;font-size:15px;font-weight:600;margin-bottom:10px;">&#8595; Last ned sikkerhetskopi-fil</button>
     <details style="margin-bottom:10px;"><summary style="font-size:13px;color:#6B746E;cursor:pointer;">Eller kopier som tekst</summary>
@@ -180,7 +186,7 @@ window.onerror = function(msg, src, line, col, err) {
   return false;
 };
 var API_KEY=ST_get(AKEY)||"";
-var TEAL="#0E5A55",SIGNAL="#A93B2A",AMBER="#9A6A14",LINE="#DCD8CC",MUTED="#6B746E";
+var TEAL="#0E2342",NAVY="#0E2342",GOLD="#C9A24B",SIGNAL="#A93B2A",AMBER="#8A6A1E",LINE="#EAE3D2",MUTED="#6E7681";
 var DEFAULT_TEMPLATES=["MK-krone {x}","MK-krone {x} med palatinalt påbitt","MK-bro {x}","Zirkoniabro {x}","Zirkoniakrone {x} sjiktet","Zirkoniakrone {x} med bukkal forblending","Fullanatomisk zirkoniakrone {x}","Fullanatomisk zirkoniakrone {x}, modellfri","Helsett","Krone {x}","Bro {x}","Trådklammerprotese {y}","HO","HU","PO","PU","Vitalliumskjelett {y}","Ferdigstilling","Skjelettprøve {x}","Skjelettprøve {y}","Implantatkrone {x} (variobase+zirkonia)","Implantatkrone {x}","Implantatbro {x} skruretinert","Hard bittskinne {y}, modellfri","Hard bittskinne {y}","Myk-hard bittskinne {y}","Blekeskinne {y}","Blekeskinner okj+ukj","Utvidelse {x}","Utvidelse {x} med klammerpåsetting {x}","Rebasering {y}","Protesereparasjon {y}","Klammerreparasjon {x}","Påsetting av klammer {x}","Etsebro {x}","E.max-krone {x}","PMMA-bro {x}","Ind. avtrykkskje {y}","Individuell avtrykkskje {y}","Bittvoll {y}","Tannoppstilling {y}","Immediatprotese {y}","Dekkprotese {y}","Studiemodell {y}","Studiemodeller {y}","3d studiemodell {y}","3d studiemodeller {y}"];
 var FREE_LABEL="Annet (fritekst)";
 var Y_OPT=["okj","ukj","okj+ukj"];
@@ -754,8 +760,8 @@ function renderReview(){
       var linked=(f.linkedOrders||[]).indexOf(o.id)>=0;
       var fa=finalAppt(o);
       var isLast=idx===reviewRelated.length-1;
-      var sBC=o.status==="Ferdig"?"#DCD8CC":o.status==="I arbeid"?"#F2E3C4":"#D9E8E6";
-      var sC=o.status==="Ferdig"?MUTED:o.status==="I arbeid"?AMBER:TEAL;
+      var sBC=o.status==="Ferdig"?"#ECE7DA":o.status==="I arbeid"?"#F7EDD2":"#FBF4DD";
+      var sC=o.status==="Ferdig"?MUTED:o.status==="I arbeid"?"#9A6A14":"#8A6A1E";
       h+='<div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:'+(isLast?"0":"10px")+';position:relative;">';
       h+='<div style="width:12px;height:12px;border-radius:50%;background:'+(linked?TEAL:"#fff")+';border:2px solid '+(linked?TEAL:LINE)+';flex-shrink:0;margin-top:3px;z-index:1;"></div>';
       h+='<button data-link="'+o.id+'" style="flex:1;text-align:left;background:'+(linked?"#EDF5F0":"#fff")+';border:1px solid '+(linked?TEAL:LINE)+';border-radius:8px;padding:10px 12px;cursor:pointer;">';
@@ -1204,8 +1210,8 @@ function renderList(){
   function cardInner(o){
     var fa=finalAppt(o),ov=fa&&fa.date&&fa.date<today()&&o.status!=="Ferdig";
     var kl=orderKlaringer(o).length>0;
-    var sBC=o.status==="Ferdig"?"#DCD8CC":o.status==="I arbeid"?"#F2E3C4":"#D9E8E6";
-    var sC=o.status==="Ferdig"?MUTED:o.status==="I arbeid"?AMBER:TEAL;
+    var sBC=o.status==="Ferdig"?"#ECE7DA":o.status==="I arbeid"?"#F7EDD2":"#FBF4DD";
+    var sC=o.status==="Ferdig"?MUTED:o.status==="I arbeid"?"#9A6A14":"#8A6A1E";
     return '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;"><div><span class="mono" style="font-size:12px;color:'+MUTED+';">'+esc(o.id)+'</span><div class="disp" style="font-weight:600;margin-top:2px;">'+(kl?"&#9888;&#65039; ":"")+esc(worksSummary(o))+'</div><div style="font-size:14px;color:'+MUTED+';margin-top:2px;">'+esc(o.dentist||"–")+(o.practice?" · "+esc(o.practice):"")+' · Pas. '+esc(o.patientInitials||"")+" "+esc(o.patientNumber||"")+'</div></div><div style="text-align:right;flex-shrink:0;"><div class="mono" style="font-size:18px;font-weight:600;color:'+(ov?SIGNAL:"#1C2823")+';">'+(fa&&fa.asap?"Snarest":(fa?fmtDate(fa.date):"–"))+'</div><span class="badge" style="background:'+sBC+';color:'+sC+';margin-top:4px;display:block;">'+esc(o.status)+'</span></div></div>';
   }
   el.innerHTML=filtered.map(function(g){
@@ -1218,8 +1224,8 @@ function renderList(){
     var open=!!expandedCases[caseId];
     var h='<div style="border:2px solid '+TEAL+';border-radius:14px;overflow:hidden;margin-bottom:12px;">';
     // summary header row (tap to expand/collapse)
-    h+='<button class="ord-card" style="margin:0;border-radius:0;border:none;width:100%;background:#F2F6F5;" data-case="'+esc(caseId)+'">'
-      +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><span style="font-size:12px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:'+TEAL+';">&#128279; Sak · '+g.length+' ordrer</span><span style="margin-left:auto;font-size:18px;color:'+TEAL+';">'+(open?"&#9650;":"&#9660;")+'</span></div>'
+    h+='<button class="ord-card" style="margin:0;border-radius:0;border:none;width:100%;background:#FCFBF7;" data-case="'+esc(caseId)+'">'
+      +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><span style="font-size:12px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:'+AMBER+';">&#128279; Sak · '+g.length+' ordrer</span><span style="margin-left:auto;font-size:18px;color:'+GOLD+';">'+(open?"&#9650;":"&#9660;")+'</span></div>'
       +cardInner(head)
       +'</button>';
     // expanded list of the OTHER orders (older ones)
