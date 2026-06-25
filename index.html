@@ -1447,7 +1447,15 @@ function renderDentistAdmin(){
     h+='<option value="multi"'+(ed.clinicMode==="multi"?" selected":"")+'>Flere klinikker (velges per ordre)</option>';
     h+='</select>';
     h+='<div id="da-fixed" style="display:'+(ed.clinicMode==="fixed"?"block":"none")+';">';
-    h+='<label class="lbl">Fast klinikk</label><input class="inp" id="da-clinic" list="da-cliniclist" value="'+esc(ed.clinic||"")+'" placeholder="Klinikknavn">';
+    h+='<label class="lbl">Fast klinikk</label>';
+    var curClinic=ed.clinic||"";
+    var inList=ALL_CLINICS.indexOf(curClinic)>=0;
+    h+='<select class="inp" id="da-clinic-sel">';
+    h+='<option value=""'+(curClinic?"":" selected")+'>– Velg klinikk –</option>';
+    ALL_CLINICS.forEach(function(cl){ h+='<option value="'+esc(cl)+'"'+(cl===curClinic?" selected":"")+'>'+esc(cl)+'</option>'; });
+    h+='<option value="__NEW__">+ Ny klinikk …</option>';
+    h+='</select>';
+    h+='<input class="inp" id="da-clinic-new" placeholder="Navn på ny klinikk" value="'+((curClinic&&!inList)?esc(curClinic):"")+'" style="display:'+((curClinic&&!inList)?"block":"none")+';margin-top:8px;">';
     h+='</div>';
     h+='<div id="da-multi" style="display:'+(ed.clinicMode==="multi"?"block":"none")+';">';
     h+='<label class="lbl">Klinikker (én per linje). Valgfritt hint i parentes for auto-valg, f.eks. Oris Dental avd. Hvaler (hvaler)</label>';
@@ -1485,6 +1493,12 @@ function bindDentistAdmin(){
     document.getElementById("da-fixed").style.display=(this.value==="fixed")?"block":"none";
     document.getElementById("da-multi").style.display=(this.value==="multi")?"block":"none";
   };
+  var clinicSel=document.getElementById("da-clinic-sel");
+  if(clinicSel)clinicSel.onchange=function(){
+    var nf=document.getElementById("da-clinic-new");
+    if(this.value==="__NEW__"){ nf.style.display="block"; nf.focus(); }
+    else { nf.style.display="none"; }
+  };
   var cancel=document.getElementById("da-cancel"); if(cancel)cancel.onclick=function(){_dadminEditIdx=null;renderSettings();};
   var save=document.getElementById("da-save");
   if(save)save.onclick=function(){
@@ -1493,7 +1507,12 @@ function bindDentistAdmin(){
     var variants=(document.getElementById("da-variants").value||"").split(",").map(function(s){return s.trim();}).filter(Boolean);
     var mode=document.getElementById("da-mode").value;
     var entry={full:full,variants:variants,clinicMode:mode,clinic:"",clinics:[],hints:{}};
-    if(mode==="fixed"){entry.clinic=(document.getElementById("da-clinic").value||"").trim();}
+    if(mode==="fixed"){
+      var sel=document.getElementById("da-clinic-sel");
+      var selVal=sel?sel.value:"";
+      if(selVal==="__NEW__"){ entry.clinic=(document.getElementById("da-clinic-new").value||"").trim(); }
+      else { entry.clinic=(selVal||"").trim(); }
+    }
     else if(mode==="multi"){
       var raw=(document.getElementById("da-clinics").value||"").split("\n").map(function(s){return s.trim();}).filter(Boolean);
       raw.forEach(function(line){
