@@ -78,8 +78,14 @@ textarea.inp{resize:vertical;}
 .sheet-body{background:#fff;border-radius:16px 16px 0 0;padding:20px;max-height:75vh;display:flex;flex-direction:column;width:100%;}
 .photo-wrap{position:relative;display:inline-block;}
 .photo-del{position:absolute;top:-8px;right:-8px;width:26px;height:26px;border-radius:50%;background:#A93B2A;color:#fff;font-size:14px;display:flex;align-items:center;justify-content:center;cursor:pointer;border:none;}
-@media print{body>*{display:none!important;}#print-area{display:block!important;}}
-#print-area{display:none;padding:12mm;}
+@media print{
+  @page{size:A4 portrait;margin:0;}
+  html,body{margin:0!important;padding:0!important;background:#fff!important;}
+  body>*{display:none!important;}
+  #print-area{display:block!important;position:absolute;top:0;left:0;width:148mm;height:210mm;box-sizing:border-box;padding:10mm;overflow:hidden;}
+  #print-area *{ -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+}
+#print-area{display:none;}
 </style>
 </head>
 <body>
@@ -92,8 +98,8 @@ textarea.inp{resize:vertical;}
   <div class="hdr-seam"></div>
   <nav class="nav">
     <button class="nav-btn active" data-nav="capture">Ny ordre</button>
-    <button class="nav-btn" data-nav="dagsorden">Dagsorden</button>
     <button class="nav-btn" data-nav="list" id="nav-list">Ordrer (0)</button>
+    <button class="nav-btn" data-nav="dagsorden">Dagsorden</button>
   </nav>
   <div id="err-bar" class="err-bar" style="display:none;"></div>
 
@@ -770,7 +776,7 @@ function fdiGridHtml(teeth,readOnly){
 // Slip HTML
 function slipHtml(o,screen){
   var fa=finalAppt(o),others=(o.appointments||[]).filter(function(a){return a!==fa&&a.date;}),kl=orderKlaringer(o);
-  var h='<div style="background:#fff;border:'+(screen?"1px solid #DCD8CC":"2px solid #000")+';border-radius:'+(screen?"14px":"0")+';padding:'+(screen?"20px":"28px")+';color:#111;max-width:700px;">';
+  var h='<div style="background:#fff;border:'+(screen?"1px solid #DCD8CC":"2px solid #000")+';border-radius:'+(screen?"14px":"0")+';padding:'+(screen?"20px":"6mm")+';color:#111;'+(screen?"max-width:700px;":"width:100%;height:100%;box-sizing:border-box;font-size:12px;")+'">';
   h+='<div style="display:flex;justify-content:space-between;align-items:baseline;border-bottom:2px solid #111;padding-bottom:10px;"><div class="disp" style="font-size:20px;font-weight:700;letter-spacing:1px;">SARPSBORG DENTAL AS</div><div class="mono" style="font-size:14px;font-weight:600;">'+esc(o.id)+'</div></div>';
   // Klaring warnings intentionally omitted from printed slip
   function srow(k,v,mono,strong,last){return'<div style="display:flex;padding:9px 0;border-bottom:'+(last?'none':'1px solid #DCD8CC')+'"><div class="mono" style="width:130px;font-size:11px;color:#666;letter-spacing:1px;padding-top:3px;text-transform:uppercase;flex-shrink:0;">'+esc(k)+'</div><div class="'+(mono?'mono':'')+'" style="font-size:'+(strong?'17':'15')+'px;font-weight:'+(strong?600:400)+';flex:1;">'+esc(v||'–')+'</div></div>';}
@@ -1044,7 +1050,12 @@ async function saveOrder(){
   }
   var newId=(next[0]&&next[0].id)||editingId;
   if(newId&&form.linkedOrders&&form.linkedOrders.length){next=next.map(function(o){if(form.linkedOrders.indexOf(o.id)>=0&&(o.linkedOrders||[]).indexOf(newId)<0)return Object.assign({},o,{linkedOrders:(o.linkedOrders||[]).concat([newId])});return o;});}
-  orders=next;saveOrders();photos=[];form=emptyForm();editingId=null;updateNavCount();renderPhotos();renderList();showScreen("list");
+  orders=next;saveOrders();photos=[];form=emptyForm();editingId=null;updateNavCount();renderPhotos();renderList();
+  // Open the just-saved order so it can be printed right away
+  var savedId=newId;
+  var justSaved=orders.filter(function(x){return x.id===savedId;})[0];
+  if(justSaved){ detailOrder=justSaved; renderDetail(); showScreen("detail"); }
+  else { showScreen("list"); }
 }
 
 // Extraction
@@ -1411,7 +1422,12 @@ function renderDagsorden(){
 function renderDetail(){
   var o=detailOrder;if(!o)return;
   var h='<button id="btn-back" style="font-size:14px;font-weight:600;color:'+TEAL+';margin-bottom:12px;cursor:pointer;">&#8592; Tilbake til listen</button>';
-  h+=slipHtml(o,true);
+  h+='<div style="display:flex;gap:10px;align-items:stretch;flex-wrap:wrap;">';
+  h+='<div style="flex:1;min-width:280px;">'+slipHtml(o,true)+'</div>';
+  h+='<div style="flex:0 0 auto;display:flex;flex-direction:column;gap:8px;min-width:150px;">';
+  h+='<button class="btn btn-teal" id="d-print-top" style="padding:16px 18px;font-size:16px;">&#128424;&#65038; Skriv ut</button>';
+  h+='<div style="font-size:12px;color:'+MUTED+';line-height:1.5;">Skrives ut i A5, øverst til venstre på A4 – brett på midten.</div>';
+  h+='</div></div>';
   var imgs=[],count=o.imageCount||1;
   for(var i=0;i<count;i++){var r=ST_get("sd-img-"+o.id+"-"+i);if(r)imgs.push(r);}
   if(!imgs.length){var r2=ST_get("sd-img-"+o.id);if(r2)imgs.push(r2);}
@@ -1421,7 +1437,14 @@ function renderDetail(){
   document.getElementById("detail-page").innerHTML=h;
   document.getElementById("btn-back").onclick=function(){showScreen("list");};
   document.getElementById("d-status").onclick=function(){var i=(STATUSES.indexOf(o.status)+1)%STATUSES.length;orders=orders.map(function(x){return x.id===o.id?Object.assign({},x,{status:STATUSES[i]}):x;});detailOrder=orders.filter(function(x){return x.id===o.id;})[0];saveOrders();renderDetail();};
-  document.getElementById("d-print").onclick=function(){document.getElementById("print-area").innerHTML=slipHtml(o,false);window.print();};
+  var _doPrint=function(){
+    document.getElementById("print-area").innerHTML=slipHtml(o,false);
+    var _after=function(){ window.removeEventListener("afterprint",_after); showScreen("list"); };
+    window.addEventListener("afterprint",_after);
+    window.print();
+  };
+  var _dpt=document.getElementById("d-print-top"); if(_dpt)_dpt.onclick=_doPrint;
+  document.getElementById("d-print").onclick=_doPrint;
   var dlink=document.getElementById("d-link");if(dlink)dlink.onclick=function(){openLinkPicker(o);};
   document.getElementById("d-edit").onclick=function(){form=Object.assign(emptyForm(),{kind:o.kind||"avtrykk",disinfected:!!o.disinfected,sentDate:o.sentDate||"",receivedDate:o.receivedDate||today(),receivedTime:o.receivedTime||nowTime(),appointments:(o.appointments&&o.appointments.length)?o.appointments:[{date:"",time:"",label:"",final:true}],dentist:o.dentist||"",practice:o.practice||"",patientInitials:o.patientInitials||"",patientNumber:o.patientNumber||"",gruppe:o.gruppe||"",alder:o.alder||"",kjonn:o.kjonn||"",antallAvtrykk:o.antallAvtrykk||"",antallModeller:o.antallModeller||"",antallIndeks:o.antallIndeks||"",works:(o.works&&o.works.length)?o.works:[],remarks:o.remarks||"",teeth:o.teeth||[],shade:o.shade||"",klaring:o.klaring||"",autoKlaring:detectKlaring(o),linkedOrders:o.linkedOrders||[],_patientFullName:o._patientFullName||"",_dentistRaw:o._dentistRaw||""});editingId=o.id;reviewRelated=[];reviewUpdateCand=null;renderReview();showScreen("review");};
   document.getElementById("d-del").onclick=function(){confirm2("Vil du slette ordre "+o.id+"?","Ja, slett",function(){orders=orders.filter(function(x){return x.id!==o.id;});saveOrders();updateNavCount();renderList();showScreen("list");});};
@@ -1433,6 +1456,7 @@ function renderDetail(){
 var _dadminEditIdx=null; // index in DREG being edited, -1 = new, null = none
 var _dadminOpen=true; // when tannleger tab active, list shown
 var _settingsTab="produkter"; // "produkter" | "tannleger"
+var _apiOpen=false; // API key section collapsed/discreet by default
 function renderDentistAdmin(){
   var h='<p style="font-size:14px;color:'+MUTED+';margin-bottom:12px;">Rediger tannleger, varianter og klinikktilknytning. Velg «Ingen klinikk» for tannleger uten fast klinikk.</p>';
   if(_dadminEditIdx!==null){
@@ -1529,10 +1553,6 @@ function bindDentistAdmin(){
 function renderSettings(){
   var h='<button id="s-back" style="font-size:14px;font-weight:600;color:'+TEAL+';margin-bottom:12px;cursor:pointer;">&#8592; Tilbake</button>';
   var _hasKey=!!(ST_get(AKEY)||"");
-  h+='<div class="disp" style="font-size:18px;font-weight:600;color:'+TEAL+';margin-bottom:4px;">API-nøkkel</div>';
-  h+='<p style="font-size:14px;color:'+MUTED+';margin-bottom:8px;">Nødvendig for å lese av seddler. Lagres kun lokalt på denne enheten.</p>';
-  h+='<input class="inp" id="s-apikey" type="password" placeholder="'+(_hasKey?"•••••• (lagret)":"Lim inn API-nøkkel (sk-ant-...)")+'" style="margin-bottom:8px;width:100%;box-sizing:border-box;">';
-  h+='<div style="display:flex;gap:8px;margin-bottom:24px;"><button class="btn btn-teal" id="s-savekey" style="flex:1;padding:10px 0;font-size:14px;">Lagre nøkkel</button>'+(_hasKey?'<button class="btn btn-ghost" id="s-clearkey" style="flex:1;padding:10px 0;font-size:14px;">Fjern</button>':"")+'</div>';
   var _tA=(_settingsTab==="produkter");
   h+='<div style="display:flex;gap:7px;margin-bottom:16px;">';
   h+='<button id="st-prod" style="flex:1;padding:11px 0;border-radius:9px;font-size:14px;font-weight:600;cursor:pointer;border:1px solid '+(_tA?TEAL:'#E4DCC4')+';background:'+(_tA?TEAL:'#fff')+';color:'+(_tA?'#F6F2E8':TEAL)+';">Produkter</button>';
@@ -1547,10 +1567,21 @@ function renderSettings(){
   h+='<button id="s-reset" style="font-size:12px;font-weight:600;text-decoration:underline;color:'+MUTED+';margin-top:16px;cursor:pointer;">Tilbakestill til standardlisten</button>';
   }
   if(_settingsTab==="tannleger"){ h+=renderDentistAdmin(); }
+  // Discreet API-key row at the very bottom
+  h+='<div style="height:1px;background:#E4DCC4;margin:28px 0 12px;"></div>';
+  h+='<button id="api-toggle" style="width:100%;text-align:left;background:transparent;border:none;padding:8px 2px;cursor:pointer;display:flex;align-items:center;color:'+MUTED+';font-size:13px;">'
+    +'<span style="opacity:.7;">\u2699\uFE0E &nbsp;API-nøkkel'+(_hasKey?" \u00b7 lagret":" \u00b7 ikke satt")+'</span>'
+    +'<span style="margin-left:auto;color:'+GOLD+';">'+(_apiOpen?"\u25B2":"\u25BC")+'</span></button>';
+  if(_apiOpen){
+    h+='<p style="font-size:13px;color:'+MUTED+';margin:6px 2px 8px;">Nødvendig for å lese av seddler. Lagres kun lokalt på denne enheten.</p>';
+    h+='<input class="inp" id="s-apikey" type="password" placeholder="'+(_hasKey?"•••••• (lagret)":"Lim inn API-nøkkel (sk-ant-...)")+'" style="margin-bottom:8px;width:100%;box-sizing:border-box;">';
+    h+='<div style="display:flex;gap:8px;margin-bottom:8px;"><button class="btn btn-teal" id="s-savekey" style="flex:1;padding:10px 0;font-size:14px;">Lagre nøkkel</button>'+(_hasKey?'<button class="btn btn-ghost" id="s-clearkey" style="flex:1;padding:10px 0;font-size:14px;">Fjern</button>':"")+'</div>';
+  }
   document.getElementById("settings-page").innerHTML=h;
   document.getElementById("s-back").onclick=function(){showScreen("capture");};
   var _sp=document.getElementById("st-prod"); if(_sp)_sp.onclick=function(){_settingsTab="produkter";renderSettings();};
   var _sd=document.getElementById("st-dent"); if(_sd)_sd.onclick=function(){_settingsTab="tannleger";renderSettings();};
+  var _at=document.getElementById("api-toggle"); if(_at)_at.onclick=function(){_apiOpen=!_apiOpen;renderSettings();};
   var _sk=document.getElementById("s-savekey");if(_sk)_sk.onclick=function(){var v=(document.getElementById("s-apikey").value||"").trim();if(v){ST_set(AKEY,v);API_KEY=v;alert("API-nøkkel lagret.");renderSettings();}else{alert("Lim inn en gyldig nøkkel først.");}};
   var _ck=document.getElementById("s-clearkey");if(_ck)_ck.onclick=function(){confirm2("Fjerne lagret API-nøkkel?","Fjern",function(){ST_del(AKEY);API_KEY="";renderSettings();});};
   var ni=document.getElementById("s-newtmpl"),pr=document.getElementById("s-preview");
