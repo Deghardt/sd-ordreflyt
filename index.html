@@ -78,20 +78,26 @@ textarea.inp{resize:vertical;}
 .sheet-body{background:#fff;border-radius:16px 16px 0 0;padding:20px;max-height:75vh;display:flex;flex-direction:column;width:100%;}
 .photo-wrap{position:relative;display:inline-block;}
 .photo-del{position:absolute;top:-8px;right:-8px;width:26px;height:26px;border-radius:50%;background:#A93B2A;color:#fff;font-size:14px;display:flex;align-items:center;justify-content:center;cursor:pointer;border:none;}
+/* Single slip prints A4 LANDSCAPE; lists print A4 PORTRAIT. Orientation set via body class. */
 @media print{
-  @page{size:A4 portrait;margin:0;}
   html,body{margin:0!important;padding:0!important;background:#fff!important;}
   body>*{display:none!important;}
   #print-area{display:block!important;position:absolute;top:0;left:0;right:0;width:100%;box-sizing:border-box;}
-  /* push slip into the RIGHT half of the sheet, leave left half blank for folding */
-  #print-area .slip-wrap{ box-sizing:border-box; width:50%; margin-left:50%; padding:10mm 8mm; }
+  #print-area *{ -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  /* SINGLE SLIP in the RIGHT HALF of a landscape sheet (fold in middle = A5) */
+  #print-area.mode-slip .slip-wrap{ box-sizing:border-box; width:50%; margin-left:50%; padding:9mm; }
+  #print-area.mode-slip .fdi-cell{ width:14px!important; height:14px!important; min-width:14px!important; font-size:7px!important; border-radius:3px!important; }
+  #print-area.mode-slip .fdi-sep{ margin:0 2px!important; }
+  #print-area.mode-slip .slip-wrap > div{ overflow:hidden!important; }
+  /* LISTS full page */
   #print-area .weekly-wrap{ box-sizing:border-box; width:100%; padding:12mm 12mm; }
   #print-area .kunder-wrap{ box-sizing:border-box; width:100%; padding:12mm 12mm; }
-  #print-area .fdi-cell{ width:15px!important; height:15px!important; min-width:15px!important; font-size:7px!important; border-radius:3px!important; }
-  #print-area .fdi-sep{ margin:0 2px!important; }
-  #print-area .slip-wrap > div{ overflow:hidden!important; }
-  #print-area *{ -webkit-print-color-adjust:exact; print-color-adjust:exact; }
 }
+@media print{
+  /* orientation via body class — most reliable across engines incl. iOS */
+  body.print-landscape{ }
+}
+@page{ size:A4; margin:0; }
 #print-area{display:none;}
 </style>
 </head>
@@ -108,6 +114,7 @@ textarea.inp{resize:vertical;}
     <button class="nav-btn" data-nav="list" id="nav-list">Ordrer (0)</button>
     <button class="nav-btn" data-nav="dagsorden">Dagsorden</button>
     <button class="nav-btn" data-nav="kunder">Kunder</button>
+    <button class="nav-btn" data-nav="statistikk">Statistikk</button>
   </nav>
   <div id="err-bar" class="err-bar" style="display:none;"></div>
 
@@ -147,6 +154,7 @@ textarea.inp{resize:vertical;}
     </div>
   </div>
   <div id="screen-dagsorden" class="screen"></div>
+  <div id="screen-statistikk" class="screen"><div class="page"><div id="statistikk-page"></div></div></div>
   <div id="screen-kunder" class="screen"><div class="page"><div id="kunder-page"></div></div></div>
   <div id="screen-detail" class="screen"><div class="page" id="detail-page"></div></div>
   <div id="screen-settings" class="screen"><div class="page" id="settings-page"></div></div>
@@ -749,6 +757,7 @@ function showScreen(name){
   else if(name==="review"){var n2=document.querySelector(".nav-btn[data-nav='capture']");if(n2)n2.classList.add("active");}
   else if(name==="detail"||name==="settings"){var n3=document.querySelector(".nav-btn[data-nav='list']");if(n3)n3.classList.add("active");}
   if(name==="kunder"){ mountKunder(); }
+  if(name==="statistikk"){ renderStatistikk(); }
   window.scrollTo(0,0);
 }
 function setError(msg){var el=document.getElementById("err-bar");if(msg){el.textContent=msg;el.style.display="block";}else el.style.display="none";}
@@ -1440,7 +1449,10 @@ function weekListHtml(offset){
   return h;
 }
 function printWeekList(offset){
-  document.getElementById("print-area").innerHTML='<div class="weekly-wrap">'+weekListHtml(offset||0)+'</div>';
+  var _pw=document.getElementById("print-area");
+  _pw.className="mode-list";
+  _pw.innerHTML='<div class="weekly-wrap">'+weekListHtml(offset||0)+'</div>';
+  setPrintOrientation("portrait");
   window.print();
 }
 
@@ -1525,7 +1537,10 @@ function renderKunder(forPrint){
   return h;
 }
 function printKunder(){
-  document.getElementById("print-area").innerHTML='<div class="kunder-wrap">'+renderKunder(true)+'</div>';
+  var _pk=document.getElementById("print-area");
+  _pk.className="mode-list";
+  _pk.innerHTML='<div class="kunder-wrap">'+renderKunder(true)+'</div>';
+  setPrintOrientation("portrait");
   window.print();
 }
 function mountKunder(){
@@ -1535,6 +1550,39 @@ function mountKunder(){
   box.querySelectorAll("[data-knote]").forEach(function(inp){
     inp.onchange=function(){ var n=loadKunderNotes(); var key=inp.getAttribute("data-knote"); var v=inp.value.trim(); if(v)n[key]=v; else delete n[key]; saveKunderNotes(); };
   });
+}
+
+// ===== STATISTIKK (top tannleger etter mengde) =====
+function renderStatistikk(){
+  var box=document.getElementById("statistikk-page"); if(!box)return;
+  var data=buildKunderData(); // already sorted desc by count
+  var total=orders.length;
+  var h='<div style="font-size:20px;font-weight:700;color:#1C2823;margin-bottom:4px;">Statistikk</div>';
+  h+='<div style="font-size:13px;color:'+MUTED+';margin-bottom:18px;">Tannleger etter antall ordrer \u00b7 '+total+' ordrer totalt</div>';
+  if(!data.length){
+    box.innerHTML=h+'<div style="font-size:15px;color:'+MUTED+';padding:20px 0;text-align:center;">Ingen ordrer enn\u00e5.</div>';
+    return;
+  }
+  var max=data[0].count||1;
+  h+='<div class="card-ivory" style="padding:16px;">';
+  h+='<div style="font-size:14px;font-weight:700;color:#15233A;margin-bottom:14px;">Topp tannleger</div>';
+  data.forEach(function(g,idx){
+    var pct=Math.round((g.count/max)*100);
+    var share=total?Math.round((g.count/total)*100):0;
+    h+='<div style="margin-bottom:13px;">';
+    h+='<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;">';
+    h+='<span style="font-size:14px;font-weight:600;color:#15233A;">'+(idx+1)+'. '+esc(g.name)+'</span>';
+    h+='<span style="font-size:13px;color:'+MUTED+';"><b style="color:'+TEAL+';">'+g.count+'</b> ('+share+'%)</span>';
+    h+='</div>';
+    // bar
+    h+='<div style="background:#EFE9DA;border-radius:6px;height:14px;overflow:hidden;">';
+    h+='<div style="width:'+pct+'%;height:100%;background:linear-gradient(90deg,'+TEAL+','+GOLD+');border-radius:6px;"></div>';
+    h+='</div>';
+    if(g.clinic)h+='<div style="font-size:11px;color:'+MUTED+';margin-top:3px;">'+esc(g.clinic)+'</div>';
+    h+='</div>';
+  });
+  h+='</div>';
+  box.innerHTML=h;
 }
 
 function renderDagsorden(){
@@ -1612,6 +1660,12 @@ function renderDagsorden(){
     };
   });
 }
+// Force print orientation by injecting an @page rule (most reliable incl. iOS Safari)
+function setPrintOrientation(orient){
+  var id="page-orient"; var el=document.getElementById(id);
+  if(!el){ el=document.createElement("style"); el.id=id; document.head.appendChild(el); }
+  el.textContent="@page{size:A4 "+orient+";margin:0;}";
+}
 function renderDetail(){
   var o=detailOrder;if(!o)return;
   var h='<button id="btn-back" style="font-size:14px;font-weight:600;color:'+TEAL+';margin-bottom:12px;cursor:pointer;">&#8592; Tilbake til listen</button>';
@@ -1619,7 +1673,7 @@ function renderDetail(){
   h+='<div style="flex:1;min-width:280px;">'+slipHtml(o,true)+'</div>';
   h+='<div style="flex:0 0 auto;display:flex;flex-direction:column;gap:8px;min-width:150px;">';
   h+='<button class="btn btn-teal" id="d-print-top" style="padding:16px 18px;font-size:16px;">&#128424;&#65038; Skriv ut</button>';
-  h+='<div style="font-size:12px;color:'+MUTED+';line-height:1.5;">Skrives ut i A5, øverst til venstre på A4 – brett på midten.</div>';
+  h+='<div style="font-size:12px;color:'+MUTED+';line-height:1.5;">Skrives ut i A4 LIGGENDE – velg «Querformat» i utskriftsdialogen. Seddelen havner på høyre halvdel; brett A4-arket på midten = A5.</div>';
   h+='</div></div>';
   var imgs=[],count=o.imageCount||1;
   for(var i=0;i<count;i++){var r=ST_get("sd-img-"+o.id+"-"+i);if(r)imgs.push(r);}
@@ -1631,7 +1685,10 @@ function renderDetail(){
   document.getElementById("btn-back").onclick=function(){showScreen("list");};
   document.getElementById("d-status").onclick=function(){var i=(STATUSES.indexOf(o.status)+1)%STATUSES.length;orders=orders.map(function(x){return x.id===o.id?Object.assign({},x,{status:STATUSES[i]}):x;});detailOrder=orders.filter(function(x){return x.id===o.id;})[0];saveOrders();renderDetail();};
   var _doPrint=function(){
-    document.getElementById("print-area").innerHTML='<div class="slip-wrap">'+slipHtml(o,false)+'</div>';
+    var _pa=document.getElementById("print-area");
+    _pa.className="mode-slip";
+    _pa.innerHTML='<div class="slip-wrap">'+slipHtml(o,false)+'</div>';
+    setPrintOrientation("landscape");
     var _after=function(){ window.removeEventListener("afterprint",_after); showScreen("list"); };
     window.addEventListener("afterprint",_after);
     window.print();
