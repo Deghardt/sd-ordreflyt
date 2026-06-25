@@ -78,21 +78,21 @@ textarea.inp{resize:vertical;}
 .sheet-body{background:#fff;border-radius:16px 16px 0 0;padding:20px;max-height:75vh;display:flex;flex-direction:column;width:100%;}
 .photo-wrap{position:relative;display:inline-block;}
 .photo-del{position:absolute;top:-8px;right:-8px;width:26px;height:26px;border-radius:50%;background:#A93B2A;color:#fff;font-size:14px;display:flex;align-items:center;justify-content:center;cursor:pointer;border:none;}
-/* All printing is A4 PORTRAIT (iOS-reliable). Single slip = TOP HALF of the page; fold the sheet in half = A5. */
+/* All printing is A4 PORTRAIT (iOS-reliable). Single slip = rotated 90° CW in the LOWER half; fold across the middle = A5. */
 @media print{
   html,body{margin:0!important;padding:0!important;background:#fff!important;}
   body>*{display:none!important;}
   #print-area{display:block!important;position:absolute;top:0;left:0;right:0;width:100%;box-sizing:border-box;}
   #print-area *{ -webkit-print-color-adjust:exact; print-color-adjust:exact; }
-  /* SINGLE SLIP: lands in the LOWER half of A4 portrait (which is itself A5-landscape shaped). */
+  /* SINGLE SLIP: rotated 90° clockwise, sitting in the LOWER half of an A4 portrait sheet. */
   /* Top half stays blank; fold the sheet across the middle = A5 with the slip on the front. */
-  #print-area.mode-slip{ width:210mm; height:297mm; position:relative; }
+  #print-area.mode-slip{ width:210mm; height:296mm; position:relative; overflow:hidden; page-break-inside:avoid; }
   #print-area.mode-slip .slip-rot{
-    position:absolute; left:0; right:0;
-    top:149mm;            /* start exactly at the lower half */
-    height:148mm;         /* the lower half */
-    box-sizing:border-box; padding:6mm 10mm; overflow:hidden;
+    position:absolute; left:0; top:148mm;      /* the lower half of the page */
+    width:210mm; height:148mm;
+    display:flex; align-items:center; justify-content:center; overflow:hidden;
   }
+  #print-area.mode-slip .slip-rotbox{ transform-origin:center center; }  /* rotate(90deg)+scale set inline by JS */
   #print-area.mode-slip .fdi-cell{ width:15px!important; height:15px!important; min-width:15px!important; font-size:7px!important; border-radius:3px!important; }
   #print-area.mode-slip .fdi-sep{ margin:0 2px!important; }
   /* LISTS full page */
@@ -1810,7 +1810,7 @@ function renderDetail(){
   h+='<div style="flex:1;min-width:280px;">'+slipHtml(o,true)+'</div>';
   h+='<div style="flex:0 0 auto;display:flex;flex-direction:column;gap:8px;min-width:150px;">';
   h+='<button class="btn btn-teal" id="d-print-top" style="padding:16px 18px;font-size:16px;">&#128424;&#65038; Skriv ut</button>';
-  h+='<div style="font-size:12px;color:'+MUTED+';line-height:1.5;">Seddelen skrives ut øverst på et A4-ark (stående). Brett arket på tvers på midten = A5. La «Skalering» stå på 100 %.</div>';
+  h+='<div style="font-size:12px;color:'+MUTED+';line-height:1.5;">Seddelen skrives ut på nedre halvdel av et A4-ark (stående), dreid 90°. Brett arket på tvers på midten = A5. La «Skalering» stå på 100 %.</div>';
   h+='</div></div>';
   var imgs=[],count=o.imageCount||1;
   for(var i=0;i<count;i++){var r=ST_get("sd-img-"+o.id+"-"+i);if(r)imgs.push(r);}
@@ -1824,21 +1824,25 @@ function renderDetail(){
   var _doPrint=function(){
     var _pa=document.getElementById("print-area");
     _pa.className="mode-slip";
-    // Use FIXED print dimensions (mm to px at 96dpi) so screen/print mismatch cannot clip the slip.
+    // The slip is rotated 90° CW into the LOWER half of A4 portrait (210mm × 148.5mm, landscape-shaped).
+    // After the rotation the slip's WIDTH becomes the vertical extent and its HEIGHT the horizontal extent,
+    // so we render at a fixed width that maps to the half-height and cap the height to the page width.
     var MM=96/25.4;
-    var availW=Math.round((210-2*10)*MM);
-    var availH=Math.round((148-2*6)*MM);
-    _pa.innerHTML='<div class="slip-rot"><div id="slip-fit" style="transform-origin:top left;width:'+availW+'px;">'+slipHtml(o,false,1)+'</div></div>';
+    var boxWmm=140;            // inner width  -> vertical extent in the lower half (<=148mm, with margin)
+    var maxHmm=198;            // inner height -> horizontal extent across the page (<=210mm, with margin)
+    var boxWpx=Math.round(boxWmm*MM);
+    var maxHpx=Math.round(maxHmm*MM);
+    _pa.innerHTML='<div class="slip-rot"><div class="slip-rotbox"><div id="slip-fit" style="width:'+boxWpx+'px;">'+slipHtml(o,false,1)+'</div></div></div>';
     (function(){
       var fit=document.getElementById("slip-fit"); if(!fit)return;
+      var box=fit.parentNode; // .slip-rotbox
       var s=_pa.style; var save={display:s.display,position:s.position,left:s.left,top:s.top,visibility:s.visibility};
       s.display="block"; s.position="absolute"; s.left="-10000px"; s.top="0"; s.visibility="hidden";
-      fit.style.transform="none";
-      var natH=fit.scrollHeight; var natW=fit.scrollWidth;
-      var fH=natH>availH?(availH/natH):1;
-      var fW=natW>availW?(availW/natW):1;
-      var f=Math.min(fH,fW,1)*0.94;
-      if(f<1){ fit.style.transform="scale("+f.toFixed(3)+")"; }
+      box.style.transform="none";
+      var natH=fit.scrollHeight;
+      var f=natH>maxHpx?(maxHpx/natH):1;
+      f=f*0.97; // small safety so nothing reaches the page edge
+      box.style.transform="rotate(90deg) scale("+f.toFixed(3)+")";
       s.display=save.display; s.position=save.position; s.left=save.left; s.top=save.top; s.visibility=save.visibility;
     })();
     var _after=function(){ window.removeEventListener("afterprint",_after); showScreen("list"); };
