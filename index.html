@@ -86,6 +86,7 @@ textarea.inp{resize:vertical;}
   /* push slip into the RIGHT half of the sheet, leave left half blank for folding */
   #print-area .slip-wrap{ box-sizing:border-box; width:50%; margin-left:50%; padding:10mm 8mm; }
   #print-area .weekly-wrap{ box-sizing:border-box; width:100%; padding:12mm 12mm; }
+  #print-area .kunder-wrap{ box-sizing:border-box; width:100%; padding:12mm 12mm; }
   #print-area .fdi-cell{ width:15px!important; height:15px!important; min-width:15px!important; font-size:7px!important; border-radius:3px!important; }
   #print-area .fdi-sep{ margin:0 2px!important; }
   #print-area .slip-wrap > div{ overflow:hidden!important; }
@@ -106,6 +107,7 @@ textarea.inp{resize:vertical;}
     <button class="nav-btn active" data-nav="capture">Ny ordre</button>
     <button class="nav-btn" data-nav="list" id="nav-list">Ordrer (0)</button>
     <button class="nav-btn" data-nav="dagsorden">Dagsorden</button>
+    <button class="nav-btn" data-nav="kunder">Kunder</button>
   </nav>
   <div id="err-bar" class="err-bar" style="display:none;"></div>
 
@@ -140,10 +142,12 @@ textarea.inp{resize:vertical;}
       </div>
       <input class="inp" id="search-inp" placeholder="Søk: tannlege, pasientnr., arbeid ..." style="margin-bottom:16px;">
       <div id="backup-reminder" style="display:none;"></div>
+      <div id="status-filter" style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:14px;"></div>
       <div id="orders-list"></div>
     </div>
   </div>
   <div id="screen-dagsorden" class="screen"></div>
+  <div id="screen-kunder" class="screen"><div class="page"><div id="kunder-page"></div></div></div>
   <div id="screen-detail" class="screen"><div class="page" id="detail-page"></div></div>
   <div id="screen-settings" class="screen"><div class="page" id="settings-page"></div></div>
 </div>
@@ -205,7 +209,8 @@ var DEFAULT_TEMPLATES=["MK-krone {x}","MK-krone {x} med palatinalt påbitt","MK-
 var FREE_LABEL="Annet (fritekst)";
 var Y_OPT=["okj","ukj","okj+ukj"];
 var STATUSES=["Ny","I arbeid","Ferdig"];
-var OKEY="sd-orders-v2",CKEY="sd-catalog-v1",LLKEY="sd-learnlog-exported-v1",BKEY="sd-lastbackup-v1",AKEY="sd-apikey-v1",DKEY="sd-dentists-v1";
+var _listStatusFilter="Alle"; // list status filter: Alle | Ny | I arbeid | Ferdig
+var OKEY="sd-orders-v2",CKEY="sd-catalog-v1",LLKEY="sd-learnlog-exported-v1",BKEY="sd-lastbackup-v1",AKEY="sd-apikey-v1",DKEY="sd-dentists-v1",NKEY="sd-customer-notes-v1";
 var UPPER=["18","17","16","15","14","13","12","11","21","22","23","24","25","26","27","28"];
 var LOWER=["48","47","46","45","44","43","42","41","31","32","33","34","35","36","37","38"];
 var VALID_GROUPS=["A","A2","B","B2","C","C1","C2","D","E4","F","G","RUS","RUS2","TOO","DOT"];
@@ -743,6 +748,7 @@ function showScreen(name){
   if(nb)nb.classList.add("active");
   else if(name==="review"){var n2=document.querySelector(".nav-btn[data-nav='capture']");if(n2)n2.classList.add("active");}
   else if(name==="detail"||name==="settings"){var n3=document.querySelector(".nav-btn[data-nav='list']");if(n3)n3.classList.add("active");}
+  if(name==="kunder"){ mountKunder(); }
   window.scrollTo(0,0);
 }
 function setError(msg){var el=document.getElementById("err-bar");if(msg){el.textContent=msg;el.style.display="block";}else el.style.display="none";}
@@ -1268,9 +1274,25 @@ function groupLinked(list){
 var expandedCases={};
 function renderList(){
   var q=(document.getElementById("search-inp")||{value:""}).value.toLowerCase();
-  var filtered=orders.filter(function(o){if(!q)return true;return[o.id,o.dentist,o.practice,o.patientInitials,o.patientNumber,worksSummary(o)].filter(Boolean).some(function(s){return String(s).toLowerCase().indexOf(q)>=0;});});
+  var filtered=orders.filter(function(o){
+    if(_listStatusFilter!=="Alle" && o.status!==_listStatusFilter)return false;
+    if(!q)return true;
+    return[o.id,o.dentist,o.practice,o.patientInitials,o.patientNumber,worksSummary(o)].filter(Boolean).some(function(s){return String(s).toLowerCase().indexOf(q)>=0;});
+  });
   filtered=groupLinked(filtered);
   renderBackupReminder();
+  // Status filter chips with counts
+  var sf=document.getElementById("status-filter");
+  if(sf){
+    var counts={Alle:orders.length};
+    STATUSES.forEach(function(s){counts[s]=orders.filter(function(o){return o.status===s;}).length;});
+    var chips=["Alle"].concat(STATUSES);
+    sf.innerHTML=chips.map(function(s){
+      var on=(_listStatusFilter===s);
+      return '<button class="lstat-chip" data-lstat="'+esc(s)+'" style="padding:7px 13px;border-radius:16px;font-size:13px;font-weight:600;cursor:pointer;border:1px solid '+(on?TEAL:"#DCD8CC")+';background:'+(on?TEAL:"#fff")+';color:'+(on?"#F6F2E8":TEAL)+';">'+esc(s)+' ('+(counts[s]||0)+')</button>';
+    }).join("");
+    sf.querySelectorAll("[data-lstat]").forEach(function(b){b.onclick=function(){_listStatusFilter=b.getAttribute("data-lstat");renderList();};});
+  }
   var el=document.getElementById("orders-list");if(!el)return;
   if(!filtered.length){el.innerHTML='<div style="text-align:center;padding:60px 0;color:'+MUTED+'"><div class="disp" style="font-size:18px;margin-bottom:8px;">Ingen ordrer ennå</div><div style="font-size:14px;">Trykk «Ny ordre» for å fotografere den første seddelen.</div></div>';return;}
   function cardInner(o){
@@ -1420,6 +1442,99 @@ function weekListHtml(offset){
 function printWeekList(offset){
   document.getElementById("print-area").innerHTML='<div class="weekly-wrap">'+weekListHtml(offset||0)+'</div>';
   window.print();
+}
+
+// ===== KUNDER (CRM-oversikt per tannlege) =====
+var _kunderNotes=null;
+function loadKunderNotes(){ if(_kunderNotes)return _kunderNotes; var s=ST_get(NKEY); try{_kunderNotes=s?JSON.parse(s):{};}catch(e){_kunderNotes={};} return _kunderNotes; }
+function saveKunderNotes(){ ST_set(NKEY, JSON.stringify(_kunderNotes||{})); }
+// Categorize a work into a coarse type for the breakdown
+function workCategory(w){
+  var t=(buildWorkText(w)||"").toLowerCase();
+  if(/bro\b|bridge|etsebro|maryland/.test(t))return "Broer";
+  if(/implantat|implant/.test(t))return "Implantat";
+  if(/krone|crown|mk-krone|e\.max|zirkonia(?!bro)/.test(t))return "Kroner";
+  if(/protese|rebasering|utvidelse|klammer|bittvoll|oppstilling|skjelett/.test(t))return "Protese";
+  if(/skinne|bittskinne/.test(t))return "Skinner";
+  if(/studiemodell|modell/.test(t))return "Modeller";
+  return "Annet";
+}
+function buildKunderData(){
+  var map={};
+  orders.forEach(function(o){
+    var name=(o.dentist||"").trim()||"(Ukjent tannlege)";
+    var g=map[name]||(map[name]={name:name, clinic:o.practice||"", count:0, cats:{}, last:"", openCount:0});
+    g.count++;
+    if(o.practice&&!g.clinic)g.clinic=o.practice;
+    if(o.status!=="Ferdig")g.openCount++;
+    (o.works||[]).forEach(function(w){var c=workCategory(w); g.cats[c]=(g.cats[c]||0)+1;});
+    var rd=o.receivedDate||"";
+    if(rd&&(!g.last||rd>g.last))g.last=rd;
+  });
+  var arr=Object.keys(map).map(function(k){return map[k];});
+  arr.sort(function(a,b){return b.count-a.count;});
+  return arr;
+}
+function renderKunder(forPrint){
+  var notes=loadKunderNotes();
+  var data=buildKunderData();
+  var h="";
+  if(!forPrint){
+    h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">';
+    h+='<div style="font-size:20px;font-weight:700;color:#1C2823;">Kunder</div>';
+    h+='<button class="btn-sm" id="k-print" style="background:#fff;color:'+TEAL+';border:1px solid '+TEAL+';">&#128424;&#65038; Skriv ut</button>';
+    h+='</div>';
+    h+='<div style="font-size:13px;color:'+MUTED+';margin-bottom:16px;">'+data.length+' tannleger \u00b7 '+orders.length+' ordrer totalt</div>';
+  } else {
+    h+='<div class="kunder" style="color:#111;">';
+    h+='<div style="display:flex;justify-content:space-between;align-items:baseline;border-bottom:2px solid #111;padding-bottom:8px;margin-bottom:10px;">';
+    h+='<div style="font-size:18px;font-weight:700;letter-spacing:1px;font-family:\'Cinzel\',Georgia,serif;">KUNDEOVERSIKT</div>';
+    h+='<div style="font-size:12px;font-weight:600;">'+fmtDate(today())+'</div></div>';
+  }
+  if(!data.length){ h+='<div style="font-size:15px;color:'+(forPrint?"#111":MUTED)+';padding:20px 0;">Ingen ordrer enn\u00e5.</div>'+(forPrint?'</div>':''); return h; }
+  data.forEach(function(g){
+    var d=g.last?dayDiff(g.last):null; // negative = days ago
+    var ago=(d===null)?null:Math.abs(d);
+    var activeLabel,activeColor;
+    if(ago===null){activeLabel="ingen dato";activeColor=MUTED;}
+    else if(ago<=30){activeLabel="aktiv";activeColor="#2E7D32";}
+    else if(ago<=90){activeLabel=ago+" dager siden";activeColor="#8A6A1E";}
+    else {activeLabel="inaktiv \u00b7 "+ago+" dager";activeColor=SIGNAL;}
+    var catStr=Object.keys(g.cats).sort(function(a,b){return g.cats[b]-g.cats[a];}).map(function(c){return c+" "+g.cats[c];}).join(" \u00b7 ");
+    if(forPrint){
+      h+='<div style="padding:8px 0;border-bottom:1px solid #ccc;">';
+      h+='<div style="display:flex;justify-content:space-between;"><span style="font-size:14px;font-weight:700;">'+esc(g.name)+'</span><span style="font-size:12px;">'+g.count+' ordrer</span></div>';
+      h+='<div style="font-size:11px;color:#444;">'+(g.clinic?esc(g.clinic)+" \u00b7 ":"")+esc(catStr)+'</div>';
+      h+='<div style="font-size:11px;color:#444;">Sist mottatt: '+(g.last?fmtDate(g.last):"\u2013")+' ('+activeLabel+')'+(notes[g.name]?' \u00b7 Notat: '+esc(notes[g.name]):'')+'</div>';
+      h+='</div>';
+    } else {
+      h+='<div class="card-ivory" style="padding:14px;margin-bottom:10px;">';
+      h+='<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">';
+      h+='<div style="flex:1;"><div class="disp" style="font-size:16px;font-weight:700;color:#15233A;">'+esc(g.name)+'</div>';
+      if(g.clinic)h+='<div style="font-size:13px;color:'+MUTED+';">'+esc(g.clinic)+'</div>';
+      h+='</div>';
+      h+='<div style="text-align:right;"><div style="font-size:22px;font-weight:700;color:'+TEAL+';line-height:1;">'+g.count+'</div><div style="font-size:11px;color:'+MUTED+';">ordrer</div></div>';
+      h+='</div>';
+      h+='<div style="margin-top:8px;font-size:13px;color:#444;">'+esc(catStr)+'</div>';
+      h+='<div style="margin-top:6px;font-size:12px;"><span style="color:'+activeColor+';font-weight:600;">\u25cf '+activeLabel+'</span><span style="color:'+MUTED+';"> \u00b7 sist mottatt '+(g.last?fmtDate(g.last):"\u2013")+(g.openCount?" \u00b7 "+g.openCount+" \u00e5pne":"")+'</span></div>';
+      h+='<input class="inp" data-knote="'+esc(g.name)+'" value="'+esc(notes[g.name]||"")+'" placeholder="Notat om denne kunden \u2026" style="margin-top:10px;margin-bottom:0;font-size:14px;">';
+      h+='</div>';
+    }
+  });
+  if(forPrint)h+='</div>';
+  return h;
+}
+function printKunder(){
+  document.getElementById("print-area").innerHTML='<div class="kunder-wrap">'+renderKunder(true)+'</div>';
+  window.print();
+}
+function mountKunder(){
+  var box=document.getElementById("kunder-page"); if(!box)return;
+  box.innerHTML=renderKunder(false);
+  var pb=document.getElementById("k-print"); if(pb)pb.onclick=printKunder;
+  box.querySelectorAll("[data-knote]").forEach(function(inp){
+    inp.onchange=function(){ var n=loadKunderNotes(); var key=inp.getAttribute("data-knote"); var v=inp.value.trim(); if(v)n[key]=v; else delete n[key]; saveKunderNotes(); };
+  });
 }
 
 function renderDagsorden(){
