@@ -85,11 +85,11 @@ textarea.inp{resize:vertical;}
   #print-area{display:block!important;position:absolute;top:0;left:0;right:0;width:100%;box-sizing:border-box;}
   #print-area *{ -webkit-print-color-adjust:exact; print-color-adjust:exact; }
   /* SINGLE SLIP: rotated 90° clockwise, sitting in the LOWER half of an A4 portrait sheet. */
-  /* Top half stays blank; fold the sheet across the middle = A5 with the slip on the front. */
-  #print-area.mode-slip{ width:210mm; height:296mm; position:relative; overflow:hidden; page-break-inside:avoid; }
+  /* Kept well within one page (top spacer + slip band) so iOS never spills a sliver onto a 2nd page. */
+  #print-area.mode-slip{ width:210mm; overflow:hidden; page-break-inside:avoid; }
+  #print-area.mode-slip .slip-spacer{ height:150mm; }   /* blank upper half; fold across the middle = A5 */
   #print-area.mode-slip .slip-rot{
-    position:absolute; left:0; top:148mm;      /* the lower half of the page */
-    width:210mm; height:148mm;
+    height:130mm;                                        /* lower band, kept clear of the bottom edge */
     display:flex; align-items:center; justify-content:center; overflow:hidden;
   }
   #print-area.mode-slip .slip-rotbox{ transform-origin:center center; }  /* rotate(90deg)+scale set inline by JS */
@@ -99,7 +99,7 @@ textarea.inp{resize:vertical;}
   #print-area .weekly-wrap{ box-sizing:border-box; width:100%; padding:12mm 12mm; }
   #print-area .kunder-wrap{ box-sizing:border-box; width:100%; padding:12mm 12mm; }
 }
-@page{ size:A4 portrait; margin:0; }
+@page{ margin:0; }
 #print-area{display:none;}
 </style>
 </head>
@@ -218,7 +218,8 @@ var FREE_LABEL="Annet (fritekst)";
 var Y_OPT=["okj","ukj","okj+ukj"];
 var STATUSES=["Ny","I arbeid","Ferdig"];
 var _listStatusFilter="Alle"; // list status filter: Alle | Ny | I arbeid | Ferdig
-var OKEY="sd-orders-v2",CKEY="sd-catalog-v1",LLKEY="sd-learnlog-exported-v1",BKEY="sd-lastbackup-v1",AKEY="sd-apikey-v1",DKEY="sd-dentists-v1",NKEY="sd-customer-notes-v1",PWKEY="sd-kunder-pw-v1",CRULESKEY="sd-customer-rules-v1";
+var OKEY="sd-orders-v2",CKEY="sd-catalog-v1",LLKEY="sd-learnlog-exported-v1",BKEY="sd-lastbackup-v1",AKEY="sd-apikey-v1",DKEY="sd-dentists-v1",NKEY="sd-customer-notes-v1",PWKEY="sd-kunder-pw-v1",CRULESKEY="sd-customer-rules-v1",MKEY="sd-model-v1";
+var MODEL_SONNET="claude-sonnet-4-6",MODEL_OPUS="claude-opus-4-8";
 var UPPER=["18","17","16","15","14","13","12","11","21","22","23","24","25","26","27","28"];
 var LOWER=["48","47","46","45","44","43","42","41","31","32","33","34","35","36","37","38"];
 var VALID_GROUPS=["A","A2","B","B2","C","C1","C2","D","E4","F","G","RUS","RUS2","TOO","DOT"];
@@ -460,6 +461,9 @@ function saveExportedIds(ids){ST_set(LLKEY,JSON.stringify(ids));}
 function markAllExported(){var ids=orders.map(function(o){return o.id;});saveExportedIds(ids);}
 function loadCatalog(){try{var r=ST_get(CKEY);if(r){var a=JSON.parse(r);if(Array.isArray(a)&&a.length)return a;}}catch(e){}return DEFAULT_TEMPLATES.slice();}
 function saveCatalog(){ST_set(CKEY,JSON.stringify(catalog));}
+// KI model for image extraction. Default = Sonnet; only switches to Opus when explicitly chosen.
+function loadModel(){var m=ST_get(MKEY);return m===MODEL_OPUS?MODEL_OPUS:MODEL_SONNET;}
+function saveModel(m){ST_set(MKEY,m===MODEL_OPUS?MODEL_OPUS:MODEL_SONNET);}
 
 // Utils
 function today(){return new Date().toISOString().slice(0,10);}
@@ -725,7 +729,7 @@ function parseSse(raw){var t="",saw=false;raw.split("\n").forEach(function(line)
 async function callApi(content,attempt){
   if(!(ST_get(AKEY)||"")){throw new Error("Ingen API-nøkkel. Gå til Innstillinger og lim inn nøkkelen din.");}
   attempt=attempt||0;var res,raw;var MAXTRY=4;var backoff=700*Math.pow(2,attempt);
-  try{res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":(ST_get(AKEY)||""),"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:1000,messages:[{role:"user",content:content}]})});raw=await res.text();}
+  try{res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":(ST_get(AKEY)||""),"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:JSON.stringify({model:loadModel(),max_tokens:2000,messages:[{role:"user",content:content}]})});raw=await res.text();}
   catch(e){if(attempt<MAXTRY){await sleep(backoff);return callApi(content,attempt+1);}throw new Error("nettverksfeil – sjekk internett og prøv igjen");}
   if((res.status===429||res.status===529||res.status>=500)&&attempt<MAXTRY){await sleep(backoff);return callApi(content,attempt+1);}
   if(!raw||!raw.trim()){if(attempt<MAXTRY){await sleep(backoff);return callApi(content,attempt+1);}throw new Error("tomt svar fra tjenesten – prøv igjen om litt (tjenesten er travel)");}
@@ -1824,15 +1828,21 @@ function renderDetail(){
   var _doPrint=function(){
     var _pa=document.getElementById("print-area");
     _pa.className="mode-slip";
-    // The slip is rotated 90° CW into the LOWER half of A4 portrait (210mm × 148.5mm, landscape-shaped).
-    // After the rotation the slip's WIDTH becomes the vertical extent and its HEIGHT the horizontal extent,
-    // so we render at a fixed width that maps to the half-height and cap the height to the page width.
+    // Rotated 90° CW, placed in the lower half but kept comfortably within one page, so iOS does not push a
+    // sliver onto a 2nd page (the sliver is what makes Safari draw the URL/footer). After the rotation the
+    // slip's WIDTH becomes the vertical extent and its HEIGHT the horizontal extent.
     var MM=96/25.4;
-    var boxWmm=140;            // inner width  -> vertical extent in the lower half (<=148mm, with margin)
-    var maxHmm=198;            // inner height -> horizontal extent across the page (<=210mm, with margin)
+    // Render NARROW (so the slip is taller than the target box) and scale to fill the lower-half box.
+    // Because the slip is then "taller" than the box aspect, the HEIGHT (= horizontal extent after the 90°
+    // rotation) fills the page width to the left/right edges, regardless of how tall the fonts render on the
+    // device. Scale may go above 1 (enlarge) so the fill does not depend on the offline font metrics.
+    var boxWmm=112;            // render width  -> becomes the vertical extent (A5 width)
+    var maxHmm=206;            // horizontal extent cap -> close to the 210mm left/right edges
+    var maxVmm=128;            // vertical extent cap   -> stays inside the 130mm lower band
     var boxWpx=Math.round(boxWmm*MM);
     var maxHpx=Math.round(maxHmm*MM);
-    _pa.innerHTML='<div class="slip-rot"><div class="slip-rotbox"><div id="slip-fit" style="width:'+boxWpx+'px;">'+slipHtml(o,false,1)+'</div></div></div>';
+    var maxVpx=Math.round(maxVmm*MM);
+    _pa.innerHTML='<div class="slip-spacer"></div><div class="slip-rot"><div class="slip-rotbox"><div id="slip-fit" style="width:'+boxWpx+'px;">'+slipHtml(o,false,1)+'</div></div></div>';
     (function(){
       var fit=document.getElementById("slip-fit"); if(!fit)return;
       var box=fit.parentNode; // .slip-rotbox
@@ -1840,8 +1850,8 @@ function renderDetail(){
       s.display="block"; s.position="absolute"; s.left="-10000px"; s.top="0"; s.visibility="hidden";
       box.style.transform="none";
       var natH=fit.scrollHeight;
-      var f=natH>maxHpx?(maxHpx/natH):1;
-      f=f*0.97; // small safety so nothing reaches the page edge
+      // Fit to the box on whichever side is limiting (after rotation: height->horizontal, width->vertical).
+      var f=Math.min(maxHpx/natH, maxVpx/boxWpx)*0.99; // tiny safety so the frame does not touch the edge
       box.style.transform="rotate(90deg) scale("+f.toFixed(3)+")";
       s.display=save.display; s.position=save.position; s.left=save.left; s.top=save.top; s.visibility=save.visibility;
     })();
@@ -1973,6 +1983,16 @@ function renderSettings(){
   h+='<button id="s-reset" style="font-size:12px;font-weight:600;text-decoration:underline;color:'+MUTED+';margin-top:16px;cursor:pointer;">Tilbakestill til standardlisten</button>';
   }
   if(_settingsTab==="tannleger"){ h+=renderDentistAdmin(); }
+  // KI model selector (Sonnet vs Opus) — affects image extraction quality/cost
+  var _model=loadModel();
+  var _isOpus=(_model===MODEL_OPUS);
+  h+='<div style="height:1px;background:#E4DCC4;margin:28px 0 12px;"></div>';
+  h+='<div class="disp" style="font-size:14px;font-weight:600;color:'+NAVY+';margin-bottom:4px;">KI-modell for avlesing</div>';
+  h+='<p style="font-size:13px;color:'+MUTED+';margin-bottom:10px;">Sonnet er rask og rimelig. Opus leser vanskelig håndskrift ofte litt bedre, men koster mer og bruker noen sekunder ekstra.</p>';
+  h+='<div style="display:flex;gap:8px;">';
+  h+='<button id="mdl-sonnet" style="flex:1;padding:12px 0;border-radius:9px;font-family:Sora,sans-serif;font-weight:600;font-size:14px;cursor:pointer;border:1px solid '+(!_isOpus?NAVY:"#E4DCC4")+';background:'+(!_isOpus?NAVY:"#fff")+';color:'+(!_isOpus?"#F6F2E8":NAVY)+';line-height:1.25;">Sonnet 4.6<br><span style="font-size:11px;font-weight:500;opacity:.85;">Rask · standard</span></button>';
+  h+='<button id="mdl-opus" style="flex:1;padding:12px 0;border-radius:9px;font-family:Sora,sans-serif;font-weight:600;font-size:14px;cursor:pointer;border:1px solid '+(_isOpus?NAVY:"#E4DCC4")+';background:'+(_isOpus?NAVY:"#fff")+';color:'+(_isOpus?"#F6F2E8":NAVY)+';line-height:1.25;">Opus 4.8<br><span style="font-size:11px;font-weight:500;opacity:.85;">Best på håndskrift</span></button>';
+  h+='</div>';
   // Discreet API-key row at the very bottom
   h+='<div style="height:1px;background:#E4DCC4;margin:28px 0 12px;"></div>';
   h+='<button id="api-toggle" style="width:100%;text-align:left;background:transparent;border:none;padding:8px 2px;cursor:pointer;display:flex;align-items:center;color:'+MUTED+';font-size:13px;">'
@@ -1988,6 +2008,8 @@ function renderSettings(){
   var _sp=document.getElementById("st-prod"); if(_sp)_sp.onclick=function(){_settingsTab="produkter";renderSettings();};
   var _sd=document.getElementById("st-dent"); if(_sd)_sd.onclick=function(){_settingsTab="tannleger";renderSettings();};
   var _at=document.getElementById("api-toggle"); if(_at)_at.onclick=function(){_apiOpen=!_apiOpen;renderSettings();};
+  var _ms=document.getElementById("mdl-sonnet"); if(_ms)_ms.onclick=function(){saveModel(MODEL_SONNET);renderSettings();};
+  var _mo=document.getElementById("mdl-opus"); if(_mo)_mo.onclick=function(){saveModel(MODEL_OPUS);renderSettings();};
   var _sk=document.getElementById("s-savekey");if(_sk)_sk.onclick=function(){var v=(document.getElementById("s-apikey").value||"").trim();if(v){ST_set(AKEY,v);API_KEY=v;alert("API-nøkkel lagret.");renderSettings();}else{alert("Lim inn en gyldig nøkkel først.");}};
   var _ck=document.getElementById("s-clearkey");if(_ck)_ck.onclick=function(){confirm2("Fjerne lagret API-nøkkel?","Fjern",function(){ST_del(AKEY);API_KEY="";renderSettings();});};
   var ni=document.getElementById("s-newtmpl"),pr=document.getElementById("s-preview");
