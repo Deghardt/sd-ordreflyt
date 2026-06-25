@@ -84,8 +84,15 @@ textarea.inp{resize:vertical;}
   body>*{display:none!important;}
   #print-area{display:block!important;position:absolute;top:0;left:0;right:0;width:100%;box-sizing:border-box;}
   #print-area *{ -webkit-print-color-adjust:exact; print-color-adjust:exact; }
-  /* SINGLE SLIP fills the TOP HALF of A4 portrait (148mm tall). Fold across the middle = A5. */
-  #print-area.mode-slip .slip-wrap{ box-sizing:border-box; width:100%; height:148mm; padding:8mm 12mm; overflow:hidden; }
+  /* SINGLE SLIP: lands in the LOWER half of A4 portrait (which is itself A5-landscape shaped). */
+  /* Top half stays blank; fold the sheet across the middle = A5 with the slip on the front. */
+  #print-area.mode-slip{ width:210mm; height:297mm; position:relative; }
+  #print-area.mode-slip .slip-rot{
+    position:absolute; left:0; right:0;
+    top:149mm;            /* start exactly at the lower half */
+    height:148mm;         /* the lower half */
+    box-sizing:border-box; padding:6mm 10mm; overflow:hidden;
+  }
   #print-area.mode-slip .fdi-cell{ width:15px!important; height:15px!important; min-width:15px!important; font-size:7px!important; border-radius:3px!important; }
   #print-area.mode-slip .fdi-sep{ margin:0 2px!important; }
   /* LISTS full page */
@@ -787,9 +794,11 @@ function fdiGridHtml(teeth,readOnly){
 }
 
 // Slip HTML
-function slipHtml(o,screen){
+function slipHtml(o,screen,scale){
+  scale=scale||1;
   var fa=finalAppt(o),others=(o.appointments||[]).filter(function(a){return a!==fa&&a.date;}),kl=orderKlaringer(o);
-  var h='<div style="background:#fff;border:'+(screen?"1px solid #DCD8CC":"2px solid #000")+';border-radius:'+(screen?"14px":"0")+';padding:'+(screen?"20px":"6mm")+';color:#111;'+(screen?"max-width:700px;":"width:100%;box-sizing:border-box;font-size:12px;")+'">';
+  var _fs=(12*scale).toFixed(1)+"px"; var _pad=(6*scale).toFixed(1)+"mm";
+  var h='<div style="background:#fff;border:'+(screen?"1px solid #DCD8CC":"2px solid #000")+';border-radius:'+(screen?"14px":"0")+';padding:'+(screen?"20px":_pad)+';color:#111;'+(screen?"max-width:700px;":"width:100%;box-sizing:border-box;font-size:"+_fs+";")+'">';
   h+='<div style="display:flex;justify-content:space-between;align-items:baseline;border-bottom:2px solid #111;padding-bottom:10px;"><div class="disp" style="font-size:20px;font-weight:700;letter-spacing:1px;">SARPSBORG DENTAL AS</div><div class="mono" style="font-size:14px;font-weight:600;">'+esc(o.id)+'</div></div>';
   // Klaring warnings intentionally omitted from printed slip
   function srow(k,v,mono,strong,last){return'<div style="display:flex;padding:9px 0;border-bottom:'+(last?'none':'1px solid #DCD8CC')+'"><div class="mono" style="width:130px;font-size:11px;color:#666;letter-spacing:1px;padding-top:3px;text-transform:uppercase;flex-shrink:0;">'+esc(k)+'</div><div class="'+(mono?'mono':'')+'" style="font-size:'+(strong?'17':'15')+'px;font-weight:'+(strong?600:400)+';flex:1;">'+esc(v||'–')+'</div></div>';}
@@ -1722,15 +1731,17 @@ function renderDagsorden(){
   var open=orders.filter(function(o){return o.status!=="Ferdig";});
   // Buckets
   var snarest=[],overdue=[],heute=[],morgen=[],uke=[],senere=[],udatert=[];
+  var _wk=weekRange(0); // Monday..Sunday of the CURRENT calendar week
   open.forEach(function(o){
     var fa=finalAppt(o);
     if(fa&&fa.asap){snarest.push(o);return;}
     var d=fa?dayDiff(fa.date):null;
     if(d===null){udatert.push(o);return;}
-    if(d<0)overdue.push(o);
-    else if(d===0)heute.push(o);
-    else if(d===1)morgen.push(o);
-    else if(d<=7)uke.push(o);
+    if(d<0){overdue.push(o);return;}
+    if(d===0){heute.push(o);return;}
+    if(d===1){morgen.push(o);return;}
+    // "Denne uke" = due within the current Mon–Sun week (after tomorrow); otherwise "Senere"
+    if(fa.date<=_wk.sunIso)uke.push(o);
     else senere.push(o);
   });
   function sortByDateTime(arr){arr.sort(function(a,b){var fa=finalAppt(a),fb=finalAppt(b);var da=(fa&&fa.date||"")+(fa&&fa.time||"");var db=(fb&&fb.date||"")+(fb&&fb.time||"");return da<db?-1:da>db?1:0;});}
@@ -1813,7 +1824,23 @@ function renderDetail(){
   var _doPrint=function(){
     var _pa=document.getElementById("print-area");
     _pa.className="mode-slip";
-    _pa.innerHTML='<div class="slip-wrap">'+slipHtml(o,false)+'</div>';
+    // Use FIXED print dimensions (mm to px at 96dpi) so screen/print mismatch cannot clip the slip.
+    var MM=96/25.4;
+    var availW=Math.round((210-2*10)*MM);
+    var availH=Math.round((148-2*6)*MM);
+    _pa.innerHTML='<div class="slip-rot"><div id="slip-fit" style="transform-origin:top left;width:'+availW+'px;">'+slipHtml(o,false,1)+'</div></div>';
+    (function(){
+      var fit=document.getElementById("slip-fit"); if(!fit)return;
+      var s=_pa.style; var save={display:s.display,position:s.position,left:s.left,top:s.top,visibility:s.visibility};
+      s.display="block"; s.position="absolute"; s.left="-10000px"; s.top="0"; s.visibility="hidden";
+      fit.style.transform="none";
+      var natH=fit.scrollHeight; var natW=fit.scrollWidth;
+      var fH=natH>availH?(availH/natH):1;
+      var fW=natW>availW?(availW/natW):1;
+      var f=Math.min(fH,fW,1)*0.94;
+      if(f<1){ fit.style.transform="scale("+f.toFixed(3)+")"; }
+      s.display=save.display; s.position=save.position; s.left=save.left; s.top=save.top; s.visibility=save.visibility;
+    })();
     var _after=function(){ window.removeEventListener("afterprint",_after); showScreen("list"); };
     window.addEventListener("afterprint",_after);
     window.print();
