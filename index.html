@@ -93,8 +93,11 @@ textarea.inp{resize:vertical;}
     display:flex; align-items:center; justify-content:center; overflow:hidden;
   }
   #print-area.mode-slip .slip-rotbox{ transform-origin:center center; }  /* rotate(90deg)+scale set inline by JS */
-  #print-area.mode-slip .fdi-cell{ width:15px!important; height:15px!important; min-width:15px!important; font-size:7px!important; border-radius:3px!important; }
+  #print-area.mode-slip .fdi-cell{ width:21px!important; height:21px!important; min-width:21px!important; font-size:10px!important; border-radius:3px!important; }
   #print-area.mode-slip .fdi-sep{ margin:0 2px!important; }
+  /* ORIGINAL photo print fallback: each image fills a page */
+  #print-area.mode-originals{ width:210mm; }
+  #print-area.mode-originals img{ display:block; width:100%; max-height:282mm; object-fit:contain; page-break-after:always; margin:0 auto; }
   /* LISTS full page */
   #print-area .weekly-wrap{ box-sizing:border-box; width:100%; padding:12mm 12mm; }
   #print-area .kunder-wrap{ box-sizing:border-box; width:100%; padding:12mm 12mm; }
@@ -218,6 +221,7 @@ var FREE_LABEL="Annet (fritekst)";
 var Y_OPT=["okj","ukj","okj+ukj"];
 var STATUSES=["I arbeid","Ferdig"];
 var _listStatusFilter="Alle"; // list status filter: Alle | Ny | I arbeid | Ferdig
+var _dagsordenWeek=0; // 0=aktuelle Kalenderwoche, negativ=Vergangenheit, positiv=Zukunft
 var OKEY="sd-orders-v2",CKEY="sd-catalog-v1",LLKEY="sd-learnlog-exported-v1",BKEY="sd-lastbackup-v1",AKEY="sd-apikey-v1",DKEY="sd-dentists-v1",NKEY="sd-customer-notes-v1",PWKEY="sd-kunder-pw-v1",CRULESKEY="sd-customer-rules-v1",MKEY="sd-model-v1";
 var MODEL_SONNET="claude-sonnet-4-6",MODEL_OPUS="claude-opus-4-8";
 var UPPER=["18","17","16","15","14","13","12","11","21","22","23","24","25","26","27","28"];
@@ -517,7 +521,7 @@ function printSlipPdf(o){
         scale:3, backgroundColor:"#ffffff", useCORS:true,
         onclone:function(d){
           var st=d.createElement("style");
-          st.textContent="#__slipfit .fdi-cell{width:15px!important;height:15px!important;min-width:15px!important;font-size:7px!important;border-radius:3px!important;}#__slipfit .fdi-sep{margin:0 2px!important;}";
+          st.textContent="#__slipfit .fdi-cell{width:21px!important;height:21px!important;min-width:21px!important;font-size:10px!important;border-radius:3px!important;}#__slipfit .fdi-sep{margin:0 2px!important;}";
           d.head.appendChild(st);
         }
       });
@@ -532,15 +536,15 @@ function printSlipPdf(o){
       var imgData=rc.toDataURL("image/png");
       var JsPDF=window.jspdf.jsPDF;
       var doc=new JsPDF({orientation:"portrait",unit:"mm",format:"a4"});
-      var PW=210, PH=297, M=10;              // 1 cm margins
+      var PW=210, PH=297, MS=5, MB=8;        // side 5 mm, bottom 8 mm (slip pulled closer to the edges)
       var AR=rc.width/rc.height;             // rotated aspect (w/h)
-      var maxW=PW-2*M;                        // 190 mm across
-      var maxH=132;                          // keep the slip below the fold line (148.5 mm)
+      var maxW=PW-2*MS;                       // 200 mm across
+      var maxH=136;                          // keep the top below the fold line (148.5 mm)
       var drawW, drawH;
-      if(maxW/AR<=maxH){ drawW=maxW; drawH=maxW/AR; }   // fills width -> 1 cm left/right
+      if(maxW/AR<=maxH){ drawW=maxW; drawH=maxW/AR; }   // fills width
       else { drawH=maxH; drawW=maxH*AR; }
       var x=(PW-drawW)/2;                     // centred
-      var y=(PH-M)-drawH;                     // bottom edge 1 cm from paper edge
+      var y=(PH-MB)-drawH;                     // bottom edge MB from paper edge
       doc.addImage(imgData,"PNG",x,y,drawW,drawH);
       var blob=doc.output("blob");
       var file=new File([blob],"arbeidsseddel.pdf",{type:"application/pdf"});
@@ -551,6 +555,50 @@ function printSlipPdf(o){
       var url=URL.createObjectURL(blob); window.location.href=url; return true;
     });
   }).catch(function(){ try{var h=document.getElementById("__slipfit");if(h&&h.parentNode&&h.parentNode.parentNode)h.parentNode.parentNode.removeChild(h.parentNode);}catch(_){} return false; });
+}
+// Print the photographed ORIGINAL order slip(s) as a PDF, one image per page (footer-free).
+function originalImages(o){
+  var imgs=[],count=o.imageCount||1;
+  for(var i=0;i<count;i++){var r=ST_get("sd-img-"+o.id+"-"+i);if(r)imgs.push(r);}
+  if(!imgs.length){var r2=ST_get("sd-img-"+o.id);if(r2)imgs.push(r2);}
+  return imgs;
+}
+function printOriginalsPdf(o){
+  var imgs=originalImages(o);
+  if(!imgs.length)return Promise.resolve(false);
+  return loadPdfLibs().then(function(){
+    return Promise.all(imgs.map(function(src){return new Promise(function(res){var im=new Image();im.onload=function(){res({src:src,w:im.naturalWidth,h:im.naturalHeight});};im.onerror=function(){res({src:src,w:0,h:0});};im.src=src;});}));
+  }).then(function(items){
+    var JsPDF=window.jspdf.jsPDF;
+    var doc=new JsPDF({orientation:"portrait",unit:"mm",format:"a4"});
+    var PW=210,PH=297,M=8;
+    items.forEach(function(it,idx){
+      if(idx>0)doc.addPage();
+      if(!it.w||!it.h)return;
+      var aw=PW-2*M, ah=PH-2*M, ar=it.w/it.h, dw, dh;
+      if(aw/ar<=ah){dw=aw;dh=aw/ar;}else{dh=ah;dw=ah*ar;}
+      var x=(PW-dw)/2, y=(PH-dh)/2;
+      var fmt=(it.src.indexOf("image/png")>=0)?"PNG":"JPEG";
+      doc.addImage(it.src,fmt,x,y,dw,dh);
+    });
+    var blob=doc.output("blob");
+    var file=new File([blob],"originalseddel.pdf",{type:"application/pdf"});
+    if(navigator.canShare&&navigator.canShare({files:[file]})){
+      return navigator.share({files:[file],title:"Originalseddel"}).then(function(){return true;},
+        function(e){if(e&&e.name==="AbortError")return true;var u=URL.createObjectURL(blob);window.location.href=u;return true;});
+    }
+    var url=URL.createObjectURL(blob);window.location.href=url;return true;
+  }).catch(function(){return false;});
+}
+// CSS fallback: print the original images via the browser (used if the PDF tools cannot load)
+function printOriginalsCss(o){
+  var imgs=originalImages(o);if(!imgs.length)return;
+  var _pa=document.getElementById("print-area");
+  _pa.className="mode-originals";
+  _pa.innerHTML=imgs.map(function(s){return '<img src="'+s+'" alt="Original">';}).join("");
+  var _after=function(){window.removeEventListener("afterprint",_after);};
+  window.addEventListener("afterprint",_after);
+  window.print();
 }
 function buildWorkText(w){if(w.free||w.template===FREE_LABEL)return(w.freeText||"").trim();var s=w.template||"";var xCount=(s.match(/\{x\}/g)||[]).length;if(xCount>=2){var x1=(w.x||"").trim()||"x";var x2=(w.x2||"").trim()||"x";var first=true;s=s.replace(/\{x\}/g,function(){if(first){first=false;return x1;}return x2;});}else{s=s.replace(/\{x\}/g,(w.x||"").trim()||"x");}s=s.replace(/\{y\}/g,(w.y||"").trim()||"y");return s;}
 function worksSummary(o){var ws=o.works||[];if(!ws.length)return"–";return ws.map(buildWorkText).filter(Boolean).join(" + ")||"–";}
@@ -873,7 +921,7 @@ function timeSelectHtml(value,idAttr,hStart,hEnd){
 // FDI
 function fdiGridHtml(teeth,readOnly){
   function cell(t){var on=teeth.indexOf(t)>=0;var cls="fdi-cell"+(on?" on":"")+(readOnly?" ro":"");return'<button class="'+cls+'" data-fdi="'+t+'" type="button">'+t+'</button>';}
-  function row(arr){return'<div style="display:flex;gap:2px;align-items:center;flex-wrap:nowrap;">'+arr.slice(0,8).map(cell).join('')+'<div class="fdi-sep"></div>'+arr.slice(8).map(cell).join('')+'</div>';}
+  function row(arr){return'<div style="display:flex;gap:2px;align-items:center;flex-wrap:nowrap;justify-content:center;width:100%;">'+arr.slice(0,8).map(cell).join('')+'<div class="fdi-sep"></div>'+arr.slice(8).map(cell).join('')+'</div>';}
   return'<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;"><div style="display:inline-flex;flex-direction:column;gap:4px;">'+row(UPPER)+row(LOWER)+'</div></div>';
 }
 
@@ -891,7 +939,7 @@ function slipHtml(o,screen,scale){
   h+='<div style="display:flex;padding:9px 0;border-bottom:1px solid #DCD8CC"><div class="mono" style="width:130px;font-size:11px;color:#666;letter-spacing:1px;padding-top:3px;text-transform:uppercase;flex-shrink:0;">ARBEID</div><div style="flex:1;">';
   if(o.works&&o.works.length)o.works.forEach(function(w){h+='<div style="font-size:17px;font-weight:600;margin-bottom:2px;">'+esc(buildWorkText(w)||"–")+'</div>';});
   else h+='<div style="font-size:17px;">–</div>';h+='</div></div>';
-  h+='<div style="padding:12px 0;border-bottom:1px solid #DCD8CC;"><div class="mono" style="font-size:11px;color:'+SIGNAL+';font-weight:600;letter-spacing:1px;">'+(fa&&fa.label?esc(fa.label).toUpperCase():"FERDIGSTILLING")+'</div><div class="mono" style="font-size:34px;font-weight:600;color:'+SIGNAL+';line-height:1.15;">'+(fa&&fa.asap?"Snarest":((fa?fmtDate(fa.date):"–")+(fa&&fa.time?"  kl. "+esc(fa.time):"")))+'</div>'+(!fa||(!fa.date&&!fa.asap)?'<div style="font-size:13px;font-weight:600;color:'+SIGNAL+';margin-top:6px;">&#9888; Dato ikke oppgitt &ndash; kontakt klinikken</div>':'')+'</div>';
+  h+='<div style="padding:12px 0;border-bottom:1px solid #DCD8CC;"><div class="mono" style="font-size:11px;color:'+SIGNAL+';font-weight:600;letter-spacing:1px;">'+(fa&&fa.label?esc(fa.label).toUpperCase():"FERDIGSTILLING")+'</div><div class="mono" style="font-size:26px;font-weight:600;color:'+SIGNAL+';line-height:1.15;white-space:nowrap;">'+(fa&&fa.asap?"Snarest":((fa?fmtDate(fa.date):"–")+(fa&&fa.time?" kl. "+esc(fa.time):"")))+'</div>'+(!fa||(!fa.date&&!fa.asap)?'<div style="font-size:13px;font-weight:600;color:'+SIGNAL+';margin-top:6px;">&#9888; Dato ikke oppgitt &ndash; kontakt klinikken</div>':'')+'</div>';
   h+='<div style="padding:10px 0;border-bottom:1px solid #DCD8CC;">';
   if(o.sentDate)h+=dline("Dato sendt",fmtDate(o.sentDate));
   h+=dline("Ank. lab",fmtDate(o.receivedDate)+(o.receivedTime?" kl. "+o.receivedTime:""));
@@ -922,8 +970,8 @@ function renderReview(){
       var fa=finalAppt(o);
       var isLast=idx===reviewRelated.length-1;
       var _st=orderStatus(o);
-      var sBC=_st==="Ferdig"?"#ECE7DA":"#F7EDD2";
-      var sC=_st==="Ferdig"?MUTED:"#9A6A14";
+      var sBC=_st==="Ferdig"?"#BFE6C6":"#FBDF6E";
+      var sC=_st==="Ferdig"?"#1B6B33":"#5E4A00";
       h+='<div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:'+(isLast?"0":"10px")+';position:relative;">';
       h+='<div style="width:12px;height:12px;border-radius:50%;background:'+(linked?TEAL:"#fff")+';border:2px solid '+(linked?TEAL:LINE)+';flex-shrink:0;margin-top:3px;z-index:1;"></div>';
       h+='<button data-link="'+o.id+'" style="flex:1;text-align:left;background:'+(linked?"#EDF5F0":"#fff")+';border:1px solid '+(linked?TEAL:LINE)+';border-radius:8px;padding:10px 12px;cursor:pointer;">';
@@ -1422,8 +1470,8 @@ function renderList(){
   function cardInner(o){
     var fa=finalAppt(o),st=orderStatus(o);
     var kl=orderKlaringer(o).length>0;
-    var sBC=st==="Ferdig"?"#ECE7DA":"#F7EDD2";
-    var sC=st==="Ferdig"?MUTED:"#9A6A14";
+    var sBC=st==="Ferdig"?"#BFE6C6":"#FBDF6E";
+    var sC=st==="Ferdig"?"#1B6B33":"#5E4A00";
     return '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;"><div><span class="mono" style="font-size:12px;color:'+MUTED+';">'+esc(o.id)+'</span><div class="disp" style="font-weight:600;margin-top:2px;">'+(kl?"&#9888;&#65039; ":"")+esc(worksSummary(o))+'</div><div style="font-size:14px;color:'+MUTED+';margin-top:2px;">'+esc(o.dentist||"–")+(o.practice?" · "+esc(o.practice):"")+' · Pas. '+esc(o.patientInitials||"")+" "+esc(o.patientNumber||"")+'</div></div><div style="text-align:right;flex-shrink:0;"><div class="mono" style="font-size:18px;font-weight:600;color:'+"#1C2823"+';">'+(fa&&fa.asap?"Snarest":(fa?fmtDate(fa.date):"–"))+'</div><span class="badge" style="background:'+sBC+';color:'+sC+';margin-top:4px;display:block;">'+esc(st)+'</span></div></div>';
   }
   el.innerHTML=filtered.map(function(g){
@@ -1816,71 +1864,67 @@ function statistikkHtml(){
   return h;
 }
 
+// ISO week number (for the Dagsorden week navigator)
+function isoWeek(d){var t=new Date(d.getTime?d.getTime():d);t.setHours(0,0,0,0);t.setDate(t.getDate()+3-((t.getDay()+6)%7));var w1=new Date(t.getFullYear(),0,4);return 1+Math.round(((t-w1)/86400000-3+((w1.getDay()+6)%7))/7);}
 function renderDagsorden(){
   var box=document.getElementById("screen-dagsorden");if(!box)return;
-  var open=orders.filter(function(o){return orderStatus(o)!=="Ferdig";});
-  // Buckets
-  var snarest=[],overdue=[],heute=[],morgen=[],uke=[],senere=[],udatert=[];
-  var _wk=weekRange(0); // Monday..Sunday of the CURRENT calendar week
-  open.forEach(function(o){
-    var fa=finalAppt(o);
-    if(fa&&fa.asap){snarest.push(o);return;}
-    var d=fa?dayDiff(fa.date):null;
-    if(d===null){udatert.push(o);return;}
-    if(d<0){overdue.push(o);return;}
-    if(d===0){heute.push(o);return;}
-    if(d===1){morgen.push(o);return;}
-    // "Denne uke" = due within the current Mon–Sun week (after tomorrow); otherwise "Senere"
-    if(fa.date<=_wk.sunIso)uke.push(o);
-    else senere.push(o);
-  });
-  function sortByDateTime(arr){arr.sort(function(a,b){var fa=finalAppt(a),fb=finalAppt(b);var da=(fa&&fa.date||"")+(fa&&fa.time||"");var db=(fb&&fb.date||"")+(fb&&fb.time||"");return da<db?-1:da>db?1:0;});}
-  [overdue,heute,morgen,uke,senere].forEach(sortByDateTime);
+  var wr=weekRange(_dagsordenWeek);
+  var DAYNAMES=["Mandag","Tirsdag","Onsdag","Torsdag","Fredag","L\u00f8rdag","S\u00f8ndag"];
+  // Orders with a Ferdigstilling date inside the selected week (ALL statuses, so past weeks show Ferdig too)
+  var inWeek=orders.filter(function(o){var fa=finalAppt(o);return fa&&fa.date&&!fa.asap&&fa.date>=wr.monIso&&fa.date<=wr.sunIso;});
+  // ASAP / undated OPEN items are not tied to a week -> always shown on top
+  var asap=orders.filter(function(o){var fa=finalAppt(o);return (!fa||fa.asap||!fa.date)&&orderStatus(o)!=="Ferdig";});
   function card(o){
     var fa=finalAppt(o);
-    var when=fa&&fa.asap?"Snarest":((fa?fmtDate(fa.date):"–")+(fa&&fa.time?" kl. "+esc(fa.time):""));
-    var who=esc(o.patientInitials||"?")+(o.patientNumber?" · "+esc(o.patientNumber):"");
-    var dent=esc(o.dentist||"")+(o.practice?" · "+esc(o.practice):"");
-    var work=esc(worksSummary(o));
+    var who=esc(o.patientInitials||"?")+(o.patientNumber?" \u00b7 "+esc(o.patientNumber):"");
+    var dent=esc(o.dentist||"")+(o.practice?" \u00b7 "+esc(o.practice):"");
+    var st=orderStatus(o);
+    var sBC=st==="Ferdig"?"#BFE6C6":"#FBDF6E", sC=st==="Ferdig"?"#1B6B33":"#5E4A00";
     return '<div style="display:flex;align-items:flex-start;gap:10px;padding:12px 14px;border:1px solid #E3E1D8;border-radius:12px;margin-bottom:8px;background:#fff;">'
       +'<button class="dagsorden-open" data-open="'+o.id+'" style="flex:1;text-align:left;background:none;border:none;cursor:pointer;padding:0;">'
-      +'<div style="font-size:15px;font-weight:700;color:#1C2823;">'+work+'</div>'
+      +'<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;"><div style="font-size:15px;font-weight:700;color:#1C2823;">'+esc(worksSummary(o))+'</div><span class="badge" style="background:'+sBC+';color:'+sC+';flex-shrink:0;">'+esc(st)+'</span></div>'
       +'<div style="font-size:13px;color:'+MUTED+';margin-top:2px;">'+who+'</div>'
       +'<div style="font-size:13px;color:'+MUTED+';">'+dent+'</div>'
-      +'<div class="mono" style="font-size:14px;font-weight:600;color:'+TEAL+';margin-top:4px;">'+when+'</div>'
+      +(fa&&fa.asap?'<div class="mono" style="font-size:14px;font-weight:600;color:'+SIGNAL+';margin-top:4px;">Snarest</div>':(fa&&fa.time?'<div class="mono" style="font-size:14px;font-weight:600;color:'+TEAL+';margin-top:4px;">kl. '+esc(fa.time)+'</div>':''))
       +'</button></div>';
   }
-  function section(title,arr,color){
-    if(!arr.length)return "";
-    return '<div style="margin-bottom:18px;"><div style="font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:'+(color||MUTED)+';margin-bottom:8px;">'+title+' ('+arr.length+')</div>'+arr.map(card).join("")+'</div>';
-  }
+  var wkNo=isoWeek(wr.mon);
+  var rel=_dagsordenWeek===0?" \u00b7 denne uken":(_dagsordenWeek===1?" \u00b7 neste uke":(_dagsordenWeek===-1?" \u00b7 forrige uke":""));
   var h='<div class="card-ivory" style="padding:16px;">';
-  h+='<div style="font-size:20px;font-weight:700;color:#1C2823;margin-bottom:4px;">Dagsorden</div>';
-  h+='<div style="font-size:13px;color:'+MUTED+';margin-bottom:16px;">'+fmtDate(today())+' · '+open.length+' \u00e5pne arbeider</div>';
-  h+='<div style="font-size:13px;font-weight:600;color:'+TEAL+';margin-bottom:6px;">&#128424;&#65038; Skriv ut ukesliste</div>';
-  h+='<div style="display:flex;gap:8px;margin-bottom:18px;">';
-  h+='<button class="btn btn-teal" id="d-weekprint" style="flex:1;padding:12px 0;font-size:14px;">Denne uken</button>';
-  h+='<button class="btn btn-outline" id="d-weekprint-next" style="flex:1;padding:12px 0;font-size:14px;">Neste uke</button>';
+  h+='<div style="font-size:20px;font-weight:700;color:#1C2823;margin-bottom:14px;">Dagsorden</div>';
+  // Week navigator
+  h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">';
+  h+='<button id="dg-prev" class="btn btn-outline" style="width:52px;padding:10px 0;font-size:20px;flex-shrink:0;">&#8249;</button>';
+  h+='<div style="flex:1;text-align:center;"><div style="font-size:16px;font-weight:700;color:#1C2823;">Uke '+wkNo+rel+'</div><div style="font-size:13px;color:'+MUTED+';">'+fmtDate(wr.monIso)+' \u2013 '+fmtDate(wr.sunIso)+'</div></div>';
+  h+='<button id="dg-next" class="btn btn-outline" style="width:52px;padding:10px 0;font-size:20px;flex-shrink:0;">&#8250;</button>';
   h+='</div>';
-  if(!open.length)h+='<div style="font-size:15px;color:'+MUTED+';padding:20px 0;text-align:center;">Ingen \u00e5pne arbeider \u2013 alt levert! \u2705</div>';
-  h+=section("\u2605 Snarest",snarest,SIGNAL);
-  h+=section("Overskredet",overdue,SIGNAL);
-  h+=section("I dag",heute,TEAL);
-  h+=section("I morgen",morgen,TEAL);
-  h+=section("Denne uken",uke,AMBER);
-  h+=section("Senere",senere,MUTED);
-  h+=section("Uten dato",udatert,MUTED);
+  h+='<div style="display:flex;gap:8px;margin-bottom:18px;">';
+  h+='<button class="btn btn-teal" id="dg-print" style="flex:1;padding:12px 0;font-size:14px;white-space:nowrap;">&#128424;&#65038; Skriv ut uke '+wkNo+'</button>';
+  if(_dagsordenWeek!==0)h+='<button class="btn btn-outline" id="dg-today" style="flex:0 0 auto;width:auto;white-space:nowrap;padding:12px 18px;font-size:14px;">I dag</button>';
+  h+='</div>';
+  if(asap.length)h+='<div style="margin-bottom:18px;"><div style="font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:'+SIGNAL+';margin-bottom:8px;">&#9733; Snarest / uten dato ('+asap.length+')</div>'+asap.map(card).join("")+'</div>';
+  // Group week orders by day
+  var byDay={};
+  inWeek.forEach(function(o){var fa=finalAppt(o);(byDay[fa.date]=byDay[fa.date]||[]).push(o);});
+  function sortDT(arr){arr.sort(function(a,b){var fa=finalAppt(a),fb=finalAppt(b);return ((fa.time||"")<(fb.time||""))?-1:1;});}
+  var anyDay=false;
+  for(var di=0;di<7;di++){
+    var dd=new Date(wr.mon);dd.setDate(wr.mon.getDate()+di);
+    var iso=dd.getFullYear()+"-"+String(dd.getMonth()+1).padStart(2,"0")+"-"+String(dd.getDate()).padStart(2,"0");
+    var list=byDay[iso]||[];if(!list.length)continue;
+    sortDT(list);anyDay=true;
+    var isToday=(iso===today());
+    h+='<div style="margin-bottom:18px;"><div style="font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:'+(isToday?TEAL:MUTED)+';margin-bottom:8px;">'+DAYNAMES[di]+' '+fmtDate(iso)+(isToday?' \u00b7 i dag':'')+' ('+list.length+')</div>'+list.map(card).join("")+'</div>';
+  }
+  if(!anyDay&&!asap.length)h+='<div style="font-size:15px;color:'+MUTED+';padding:24px 0;text-align:center;">Ingen arbeider denne uken.</div>';
   h+='</div>';
   box.innerHTML=h;
-  // Bind
-  var _wp=document.getElementById("d-weekprint"); if(_wp)_wp.onclick=function(){printWeekList(0);};
-  var _wpn=document.getElementById("d-weekprint-next"); if(_wpn)_wpn.onclick=function(){printWeekList(1);};
+  var _pv=document.getElementById("dg-prev"); if(_pv)_pv.onclick=function(){_dagsordenWeek--;renderDagsorden();};
+  var _nx=document.getElementById("dg-next"); if(_nx)_nx.onclick=function(){_dagsordenWeek++;renderDagsorden();};
+  var _td=document.getElementById("dg-today"); if(_td)_td.onclick=function(){_dagsordenWeek=0;renderDagsorden();};
+  var _pr=document.getElementById("dg-print"); if(_pr)_pr.onclick=function(){printWeekList(_dagsordenWeek);};
   box.querySelectorAll("[data-open]").forEach(function(b){
-    b.onclick=function(){
-      var id=b.getAttribute("data-open");
-      var o=orders.filter(function(x){return x.id===id;})[0];
-      if(o){detailOrder=o;renderDetail();showScreen("detail");}
-    };
+    b.onclick=function(){var id=b.getAttribute("data-open");var o=orders.filter(function(x){return x.id===id;})[0];if(o){detailOrder=o;renderDetail();showScreen("detail");}};
   });
 }
 function renderDetail(){
@@ -1895,7 +1939,7 @@ function renderDetail(){
   var imgs=[],count=o.imageCount||1;
   for(var i=0;i<count;i++){var r=ST_get("sd-img-"+o.id+"-"+i);if(r)imgs.push(r);}
   if(!imgs.length){var r2=ST_get("sd-img-"+o.id);if(r2)imgs.push(r2);}
-  if(imgs.length)h+='<div style="margin-top:16px;"><div class="disp" style="font-size:14px;font-weight:600;color:'+MUTED+';margin-bottom:8px;">'+(imgs.length>1?"Originalbilder ("+imgs.length+")":"Originalbilde")+'</div>'+imgs.map(function(s,i){return'<img src="'+s+'" alt="Original '+(i+1)+'" style="border-radius:12px;width:100%;border:1px solid #DCD8CC;margin-bottom:12px;">';}).join("")+'</div>';
+  if(imgs.length)h+='<div style="margin-top:16px;"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px;"><div class="disp" style="font-size:14px;font-weight:600;color:'+MUTED+';">'+(imgs.length>1?"Originalbilder ("+imgs.length+")":"Originalbilde")+'</div><button id="d-print-orig" class="btn btn-outline" style="padding:8px 14px;font-size:13px;flex-shrink:0;">&#128424;&#65038; Skriv ut original</button></div>'+imgs.map(function(s,i){return'<img src="'+s+'" alt="Original '+(i+1)+'" style="border-radius:12px;width:100%;border:1px solid #DCD8CC;margin-bottom:12px;">';}).join("")+'</div>';
   if(o.linkedOrders&&o.linkedOrders.length)h+='<div class="alert-ivory" style="margin-top:16px;"><div class="disp" style="font-size:14px;font-weight:600;color:'+TEAL+';margin-bottom:8px;">&#128279; Del av sak</div>'+o.linkedOrders.map(function(id){var lk=orders.filter(function(x){return x.id===id;})[0];return'<button data-no="'+esc(id)+'" style="width:100%;text-align:left;border-radius:8px;display:flex;align-items:center;gap:8px;font-size:14px;background:#fff;border:1px solid '+LINE+';padding:8px 12px;margin-bottom:4px;cursor:pointer;"><span class="mono" style="font-size:12px;font-weight:600;color:'+TEAL+'">'+esc(id)+'</span><span style="flex:1;color:#1C2823;">'+esc(lk?worksSummary(lk):"–")+'</span><span style="font-size:12px;color:'+MUTED+'">'+esc(lk?orderStatus(lk):"")+'</span></button>';}).join("")+'</div>';
   h+='<div class="g2" style="margin-top:20px;"><button class="btn btn-teal" id="d-print">&#128424; Skriv ut</button><button class="btn btn-ghost" id="d-edit">Rediger</button><button class="btn btn-outline" id="d-link">&#128279; Knytt til ordre</button><button class="btn" id="d-del" style="background:#fff;color:'+SIGNAL+';border:1px solid '+SIGNAL+';">Slett</button></div>';
   document.getElementById("detail-page").innerHTML=h;
@@ -1939,6 +1983,7 @@ function renderDetail(){
   };
   var _dpt=document.getElementById("d-print-top"); if(_dpt)_dpt.onclick=_doPrint;
   document.getElementById("d-print").onclick=_doPrint;
+  var _dpo=document.getElementById("d-print-orig"); if(_dpo)_dpo.onclick=function(){ printOriginalsPdf(o).then(function(ok){ if(!ok) printOriginalsCss(o); }).catch(function(){ printOriginalsCss(o); }); };
   var dlink=document.getElementById("d-link");if(dlink)dlink.onclick=function(){openLinkPicker(o);};
   document.getElementById("d-edit").onclick=function(){form=Object.assign(emptyForm(),{kind:o.kind||"avtrykk",disinfected:!!o.disinfected,sentDate:o.sentDate||"",receivedDate:o.receivedDate||today(),receivedTime:o.receivedTime||nowTime(),appointments:(o.appointments&&o.appointments.length)?o.appointments:[{date:"",time:"",label:"",final:true}],dentist:o.dentist||"",practice:o.practice||"",patientInitials:o.patientInitials||"",patientNumber:o.patientNumber||"",gruppe:o.gruppe||"",alder:o.alder||"",kjonn:o.kjonn||"",antallAvtrykk:o.antallAvtrykk||"",antallModeller:o.antallModeller||"",antallIndeks:o.antallIndeks||"",works:(o.works&&o.works.length)?o.works:[],remarks:o.remarks||"",teeth:o.teeth||[],shade:o.shade||"",klaring:o.klaring||"",autoKlaring:detectKlaring(o),linkedOrders:o.linkedOrders||[],_patientFullName:o._patientFullName||"",_dentistRaw:o._dentistRaw||""});editingId=o.id;reviewRelated=[];reviewUpdateCand=null;renderReview();showScreen("review");};
   document.getElementById("d-del").onclick=function(){confirm2("Vil du slette ordre "+o.id+"?","Ja, slett",function(){orders=orders.filter(function(x){return x.id!==o.id;});saveOrders();updateNavCount();renderList();showScreen("list");});};
