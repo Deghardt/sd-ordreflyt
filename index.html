@@ -216,7 +216,7 @@ var TEAL="#0E2342",NAVY="#0E2342",GOLD="#C9A24B",SIGNAL="#A93B2A",AMBER="#8A6A1E
 var DEFAULT_TEMPLATES=["MK-krone {x}","MK-krone {x} med palatinalt påbitt","MK-bro {x}","Zirkoniabro {x}","Zirkoniakrone {x} sjiktet","Zirkoniakrone {x} med bukkal forblending","Fullanatomisk zirkoniakrone {x}","Fullanatomisk zirkoniakrone {x}, modellfri","Fullanatomisk zirkoniabro {x}, modellfri","Helsett","Krone {x}","Bro {x}","Trådklammerprotese {y}","HO","HU","PO","PU","Vitalliumskjelett {y}","Ferdigstilling","Skjelettprøve {x}","Skjelettprøve {y}","Implantatkrone {x} (variobase+zirkonia)","Implantatkrone {x}","Implantatbro {x} skruretinert","Hard bittskinne {y}, modellfri","Hard bittskinne {y}","Myk-hard bittskinne {y}","Blekeskinne {y}","Blekeskinner okj+ukj","Utvidelse {x}","Utvidelse {x} med klammerpåsetting {x}","Rebasering {y}","Protesereparasjon {y}","Klammerreparasjon {x}","Påsetting av klammer {x}","Etsebro {x}","E.max-krone {x}","PMMA-bro {x}","Ind. avtrykkskje {y}","Individuell avtrykkskje {y}","Bittvoll {y}","Tannoppstilling {y}","Immediatprotese {y}","Dekkprotese {y}","Studiemodell {y}","Studiemodeller {y}","3d studiemodell {y}","3d studiemodeller {y}"];
 var FREE_LABEL="Annet (fritekst)";
 var Y_OPT=["okj","ukj","okj+ukj"];
-var STATUSES=["Ny","I arbeid","Ferdig"];
+var STATUSES=["I arbeid","Ferdig"];
 var _listStatusFilter="Alle"; // list status filter: Alle | Ny | I arbeid | Ferdig
 var OKEY="sd-orders-v2",CKEY="sd-catalog-v1",LLKEY="sd-learnlog-exported-v1",BKEY="sd-lastbackup-v1",AKEY="sd-apikey-v1",DKEY="sd-dentists-v1",NKEY="sd-customer-notes-v1",PWKEY="sd-kunder-pw-v1",CRULESKEY="sd-customer-rules-v1",MKEY="sd-model-v1";
 var MODEL_SONNET="claude-sonnet-4-6",MODEL_OPUS="claude-opus-4-8";
@@ -431,14 +431,17 @@ function rebuildFromRegistry(){
     KNOWN[d.full.toLowerCase()]=d.full;
     d.variants.forEach(function(v){ if(v) KNOWN[String(v).toLowerCase()]=d.full; });
   });
-  DCLINIC={}; MULTI_CLINIC_DENTISTS={};
+  DCLINIC={}; MULTI_CLINIC_DENTISTS={}; CLINIC_DENTISTS={};
   var clinicSet={};
   ALL_CLINICS.forEach(function(c){clinicSet[c]=true;});
   DREG.forEach(function(e){
-    if(e.clinicMode==="fixed"&&e.clinic){ DCLINIC[e.full]=e.clinic; clinicSet[e.clinic]=true; }
+    if(e.clinicMode==="fixed"&&e.clinic){
+      DCLINIC[e.full]=e.clinic; clinicSet[e.clinic]=true;
+      (CLINIC_DENTISTS[e.clinic]=CLINIC_DENTISTS[e.clinic]||[]).push(e.full);
+    }
     else if(e.clinicMode==="multi"&&(e.clinics||[]).length){
       MULTI_CLINIC_DENTISTS[e.full]={clinics:e.clinics.slice(), hints:e.hints||{}, warning:"Hvilken klinikk gjelder denne ordren for "+e.full+"?"};
-      e.clinics.forEach(function(c){clinicSet[c]=true;});
+      e.clinics.forEach(function(c){clinicSet[c]=true; (CLINIC_DENTISTS[c]=CLINIC_DENTISTS[c]||[]).push(e.full);});
     }
     // clinicMode "none" => no clinic entry; clinic field stays empty
   });
@@ -472,6 +475,83 @@ function pad(n){return String(n).padStart(2,"0");}
 function fmtDate(iso){if(!iso)return"–";var p=iso.split("-");return p[2]+"."+p[1]+"."+p[0];}
 function ageFromBirth(iso){if(!iso||!/^\d{4}-\d{2}-\d{2}$/.test(iso))return"";var b=new Date(iso);if(isNaN(b))return"";var n=new Date(),a=n.getFullYear()-b.getFullYear(),m=n.getMonth()-b.getMonth();if(m<0||(m===0&&n.getDate()<b.getDate()))a--;return a>=0&&a<130?String(a):"";}
 function finalAppt(o){var a=o.appointments||[];if(!a.length)return null;var m=a.filter(function(x){return x.final;})[0];if(m)return m;var s=a.filter(function(x){return x.date;}).sort(function(p,q){return p.date.localeCompare(q.date);});return s[0]||a[0];}
+// Automatic status: a work is "I arbeid" until its (Ferdigstilling) appointment date passes, then "Ferdig".
+// A stored "Ferdig" (e.g. older orders) is always respected. No manual marking needed.
+function orderStatus(o){
+  if(o.status==="Ferdig")return "Ferdig";
+  var fa=finalAppt(o);
+  if(fa&&fa.date&&!fa.asap&&fa.date<today())return "Ferdig";
+  return "I arbeid";
+}
+
+// ---- Single-slip PDF print (removes Safari's URL/footer; lets us set exact 1cm margins) ----
+var _pdfLibsP=null;
+function loadPdfLibs(){
+  if(_pdfLibsP)return _pdfLibsP;
+  _pdfLibsP=new Promise(function(resolve,reject){
+    function add(src,ready,next){
+      if(ready()){next();return;}
+      var s=document.createElement("script");s.src=src;
+      s.onload=function(){ready()?next():reject(new Error("notready"));};
+      s.onerror=function(){reject(new Error("load"));};
+      document.head.appendChild(s);
+    }
+    add("https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js",
+      function(){return typeof html2canvas!=="undefined";},function(){
+      add("https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js",
+        function(){return !!(window.jspdf&&window.jspdf.jsPDF);},resolve);
+    });
+  });
+  return _pdfLibsP;
+}
+// Returns true if it handled the print, false to fall back to window.print()
+function printSlipPdf(o){
+  return loadPdfLibs().then(function(){
+    var host=document.createElement("div");
+    host.style.cssText="position:fixed;left:-10000px;top:0;background:#fff;z-index:-1;";
+    host.innerHTML='<div id="__slipfit" style="width:430px;background:#fff;padding:0;">'+slipHtml(o,false,1)+'</div>';
+    document.body.appendChild(host);
+    var fontsReady=(document.fonts&&document.fonts.ready)?document.fonts.ready:Promise.resolve();
+    return fontsReady.then(function(){return new Promise(function(r){setTimeout(r,80);});}).then(function(){
+      return html2canvas(document.getElementById("__slipfit"),{
+        scale:3, backgroundColor:"#ffffff", useCORS:true,
+        onclone:function(d){
+          var st=d.createElement("style");
+          st.textContent="#__slipfit .fdi-cell{width:15px!important;height:15px!important;min-width:15px!important;font-size:7px!important;border-radius:3px!important;}#__slipfit .fdi-sep{margin:0 2px!important;}";
+          d.head.appendChild(st);
+        }
+      });
+    }).then(function(canvas){
+      document.body.removeChild(host);
+      // rotate the slip image 90° clockwise
+      var rc=document.createElement("canvas");
+      rc.width=canvas.height; rc.height=canvas.width;
+      var ctx=rc.getContext("2d");
+      ctx.translate(rc.width/2,rc.height/2); ctx.rotate(Math.PI/2);
+      ctx.drawImage(canvas,-canvas.width/2,-canvas.height/2);
+      var imgData=rc.toDataURL("image/png");
+      var JsPDF=window.jspdf.jsPDF;
+      var doc=new JsPDF({orientation:"portrait",unit:"mm",format:"a4"});
+      var PW=210, PH=297, M=10;              // 1 cm margins
+      var AR=rc.width/rc.height;             // rotated aspect (w/h)
+      var maxW=PW-2*M;                        // 190 mm across
+      var maxH=132;                          // keep the slip below the fold line (148.5 mm)
+      var drawW, drawH;
+      if(maxW/AR<=maxH){ drawW=maxW; drawH=maxW/AR; }   // fills width -> 1 cm left/right
+      else { drawH=maxH; drawW=maxH*AR; }
+      var x=(PW-drawW)/2;                     // centred
+      var y=(PH-M)-drawH;                     // bottom edge 1 cm from paper edge
+      doc.addImage(imgData,"PNG",x,y,drawW,drawH);
+      var blob=doc.output("blob");
+      var file=new File([blob],"arbeidsseddel.pdf",{type:"application/pdf"});
+      if(navigator.canShare&&navigator.canShare({files:[file]})){
+        return navigator.share({files:[file],title:"Arbeidsseddel"}).then(function(){return true;},
+          function(e){ if(e&&e.name==="AbortError")return true; var u=URL.createObjectURL(blob); window.location.href=u; return true; });
+      }
+      var url=URL.createObjectURL(blob); window.location.href=url; return true;
+    });
+  }).catch(function(){ try{var h=document.getElementById("__slipfit");if(h&&h.parentNode&&h.parentNode.parentNode)h.parentNode.parentNode.removeChild(h.parentNode);}catch(_){} return false; });
+}
 function buildWorkText(w){if(w.free||w.template===FREE_LABEL)return(w.freeText||"").trim();var s=w.template||"";var xCount=(s.match(/\{x\}/g)||[]).length;if(xCount>=2){var x1=(w.x||"").trim()||"x";var x2=(w.x2||"").trim()||"x";var first=true;s=s.replace(/\{x\}/g,function(){if(first){first=false;return x1;}return x2;});}else{s=s.replace(/\{x\}/g,(w.x||"").trim()||"x");}s=s.replace(/\{y\}/g,(w.y||"").trim()||"y");return s;}
 function worksSummary(o){var ws=o.works||[];if(!ws.length)return"–";return ws.map(buildWorkText).filter(Boolean).join(" + ")||"–";}
 function tmplNeedsX(t){return/\{x\}/.test(t||"");}
@@ -841,14 +921,15 @@ function renderReview(){
       var linked=(f.linkedOrders||[]).indexOf(o.id)>=0;
       var fa=finalAppt(o);
       var isLast=idx===reviewRelated.length-1;
-      var sBC=o.status==="Ferdig"?"#ECE7DA":o.status==="I arbeid"?"#F7EDD2":"#FBF4DD";
-      var sC=o.status==="Ferdig"?MUTED:o.status==="I arbeid"?"#9A6A14":"#8A6A1E";
+      var _st=orderStatus(o);
+      var sBC=_st==="Ferdig"?"#ECE7DA":"#F7EDD2";
+      var sC=_st==="Ferdig"?MUTED:"#9A6A14";
       h+='<div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:'+(isLast?"0":"10px")+';position:relative;">';
       h+='<div style="width:12px;height:12px;border-radius:50%;background:'+(linked?TEAL:"#fff")+';border:2px solid '+(linked?TEAL:LINE)+';flex-shrink:0;margin-top:3px;z-index:1;"></div>';
       h+='<button data-link="'+o.id+'" style="flex:1;text-align:left;background:'+(linked?"#EDF5F0":"#fff")+';border:1px solid '+(linked?TEAL:LINE)+';border-radius:8px;padding:10px 12px;cursor:pointer;">';
       h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">';
       h+='<span class="mono" style="font-size:11px;color:'+MUTED+';">'+esc(o.id)+'</span>';
-      h+='<span class="badge" style="background:'+sBC+';color:'+sC+';">'+esc(o.status)+'</span>';
+      h+='<span class="badge" style="background:'+sBC+';color:'+sC+';">'+esc(_st)+'</span>';
       h+='</div>';
       h+='<div style="font-size:14px;font-weight:600;color:#1C2823;">'+esc(worksSummary(o))+'</div>';
       h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;">';
@@ -883,19 +964,24 @@ function renderReview(){
   var _dentEmpty=!f.dentist;
   var _showDentDropdown=true;
   if(_showDentDropdown){
-    // Build candidate list: prefer dentists of known clinic, fallback to all
-    var _dentCandidates=[];
-    if(f.practice&&CLINIC_DENTISTS[f.practice]){
-      _dentCandidates=CLINIC_DENTISTS[f.practice].slice().sort(function(a,b){return a.localeCompare(b,"nb");});
-    } else {
-      _dentCandidates=DENTISTS.map(function(d){return d.full;}).sort(function(a,b){return a.localeCompare(b,"nb");});
-    }
+    // Candidates: dentists of the selected clinic FIRST (grouped), then EVERY other dentist, so the
+    // clinic's registry dentists show up and any dentist always stays selectable.
+    var _nb=function(a,b){return a.localeCompare(b,"nb");};
+    var _allDent=DENTISTS.map(function(d){return d.full;}).sort(_nb);
+    var _clinicDent=(f.practice&&CLINIC_DENTISTS[f.practice])?CLINIC_DENTISTS[f.practice].slice().sort(_nb):[];
+    var _otherDent=_allDent.filter(function(n){return _clinicDent.indexOf(n)<0;});
     h+='<div class="field"><div class="lbl">Tannlege <span style="color:'+SIGNAL+';font-size:11px;">&#9660; ukjent – velg</span></div>';
     var _dStyle=(_dentUnknown||_dentEmpty)?'border-color:'+SIGNAL+';background:#FBF4E4;':'';  
     h+='<select class="inp" id="i-dentist" style="'+_dStyle+'">';
     h+='<option value="">– velg tannlege –</option>';
-    _dentCandidates.forEach(function(dn){h+='<option value="'+esc(dn)+'"'+(f.dentist===dn?' selected':'')+'>'+esc(dn)+'</option>';});
-    if(f.dentist&&_dentCandidates.indexOf(f.dentist)<0)h+='<option value="'+esc(f.dentist)+'" selected>'+esc(f.dentist)+'</option>';
+    var _opt=function(dn){return '<option value="'+esc(dn)+'"'+(f.dentist===dn?' selected':'')+'>'+esc(dn)+'</option>';};
+    if(_clinicDent.length){
+      h+='<optgroup label="'+esc(f.practice)+'">'+_clinicDent.map(_opt).join('')+'</optgroup>';
+      if(_otherDent.length)h+='<optgroup label="Andre tannleger">'+_otherDent.map(_opt).join('')+'</optgroup>';
+    } else {
+      h+=_allDent.map(_opt).join('');
+    }
+    if(f.dentist&&_allDent.indexOf(f.dentist)<0)h+='<option value="'+esc(f.dentist)+'" selected>'+esc(f.dentist)+'</option>';
     h+='</select></div>';
   }
   // Klinikk: always a dropdown with ALL_CLINICS; orange if multi-clinic dentist with unresolved clinic
@@ -1094,7 +1180,7 @@ async function saveOrder(){
   else{
     var seq=orders.reduce(function(m,o){return Math.max(m,o.seq||0);},0)+1;
     var id="SD-"+new Date().getFullYear()+"-"+String(seq).padStart(3,"0");
-    var order=Object.assign({id:id,seq:seq,status:"Ny",createdAt:Date.now()},form,{imageCount:photos.length});
+    var order=Object.assign({id:id,seq:seq,status:"I arbeid",createdAt:Date.now()},form,{imageCount:photos.length});
     next=[order].concat(orders);
     for(var i=0;i<photos.length;i++){try{var img=await shrink(photos[i].preview,640,0.55,form.rotateCW||0);ST_set("sd-img-"+id+"-"+i,img);}catch(e){}}
   }
@@ -1313,7 +1399,7 @@ var expandedCases={};
 function renderList(){
   var q=(document.getElementById("search-inp")||{value:""}).value.toLowerCase();
   var filtered=orders.filter(function(o){
-    if(_listStatusFilter!=="Alle" && o.status!==_listStatusFilter)return false;
+    if(_listStatusFilter!=="Alle" && orderStatus(o)!==_listStatusFilter)return false;
     if(!q)return true;
     return[o.id,o.dentist,o.practice,o.patientInitials,o.patientNumber,worksSummary(o)].filter(Boolean).some(function(s){return String(s).toLowerCase().indexOf(q)>=0;});
   });
@@ -1323,7 +1409,7 @@ function renderList(){
   var sf=document.getElementById("status-filter");
   if(sf){
     var counts={Alle:orders.length};
-    STATUSES.forEach(function(s){counts[s]=orders.filter(function(o){return o.status===s;}).length;});
+    STATUSES.forEach(function(s){counts[s]=orders.filter(function(o){return orderStatus(o)===s;}).length;});
     var chips=["Alle"].concat(STATUSES);
     sf.innerHTML=chips.map(function(s){
       var on=(_listStatusFilter===s);
@@ -1334,11 +1420,11 @@ function renderList(){
   var el=document.getElementById("orders-list");if(!el)return;
   if(!filtered.length){el.innerHTML='<div style="text-align:center;padding:60px 0;color:'+MUTED+'"><div class="disp" style="font-size:18px;margin-bottom:8px;">Ingen ordrer ennå</div><div style="font-size:14px;">Trykk «Ny ordre» for å fotografere den første seddelen.</div></div>';return;}
   function cardInner(o){
-    var fa=finalAppt(o),ov=fa&&fa.date&&fa.date<today()&&o.status!=="Ferdig";
+    var fa=finalAppt(o),st=orderStatus(o);
     var kl=orderKlaringer(o).length>0;
-    var sBC=o.status==="Ferdig"?"#ECE7DA":o.status==="I arbeid"?"#F7EDD2":"#FBF4DD";
-    var sC=o.status==="Ferdig"?MUTED:o.status==="I arbeid"?"#9A6A14":"#8A6A1E";
-    return '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;"><div><span class="mono" style="font-size:12px;color:'+MUTED+';">'+esc(o.id)+'</span><div class="disp" style="font-weight:600;margin-top:2px;">'+(kl?"&#9888;&#65039; ":"")+esc(worksSummary(o))+'</div><div style="font-size:14px;color:'+MUTED+';margin-top:2px;">'+esc(o.dentist||"–")+(o.practice?" · "+esc(o.practice):"")+' · Pas. '+esc(o.patientInitials||"")+" "+esc(o.patientNumber||"")+'</div></div><div style="text-align:right;flex-shrink:0;"><div class="mono" style="font-size:18px;font-weight:600;color:'+(ov?SIGNAL:"#1C2823")+';">'+(fa&&fa.asap?"Snarest":(fa?fmtDate(fa.date):"–"))+'</div><span class="badge" style="background:'+sBC+';color:'+sC+';margin-top:4px;display:block;">'+esc(o.status)+'</span></div></div>';
+    var sBC=st==="Ferdig"?"#ECE7DA":"#F7EDD2";
+    var sC=st==="Ferdig"?MUTED:"#9A6A14";
+    return '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;"><div><span class="mono" style="font-size:12px;color:'+MUTED+';">'+esc(o.id)+'</span><div class="disp" style="font-weight:600;margin-top:2px;">'+(kl?"&#9888;&#65039; ":"")+esc(worksSummary(o))+'</div><div style="font-size:14px;color:'+MUTED+';margin-top:2px;">'+esc(o.dentist||"–")+(o.practice?" · "+esc(o.practice):"")+' · Pas. '+esc(o.patientInitials||"")+" "+esc(o.patientNumber||"")+'</div></div><div style="text-align:right;flex-shrink:0;"><div class="mono" style="font-size:18px;font-weight:600;color:'+"#1C2823"+';">'+(fa&&fa.asap?"Snarest":(fa?fmtDate(fa.date):"–"))+'</div><span class="badge" style="background:'+sBC+';color:'+sC+';margin-top:4px;display:block;">'+esc(st)+'</span></div></div>';
   }
   el.innerHTML=filtered.map(function(g){
     if(g.length===1){
@@ -1384,7 +1470,7 @@ function openLinkPicker(o){
     var o2=orders.filter(function(x){return x.id===o.id;})[0]||o;
     var cur=o2.linkedOrders||[];
     var q=(search&&search.value||"").trim().toLowerCase();
-    var others=orders.filter(function(x){return x.id!==o.id&&x.status!=="Ferdig";});
+    var others=orders.filter(function(x){return x.id!==o.id&&orderStatus(x)!=="Ferdig";});
     others.sort(function(a,b){return(b.seq||0)-(a.seq||0);});
     if(q){others=others.filter(function(x){var hay=((x.patientInitials||"")+" "+(x.patientNumber||"")+" "+(x.dentist||"")+" "+worksSummary(x)).toLowerCase();return hay.indexOf(q)>=0;});}
     if(!others.length){lst.innerHTML='<div style="font-size:14px;color:#6B746E;padding:12px 0;">'+(q?"Ingen treff.":"Ingen andre åpne ordrer å knytte til.")+'</div>';return;}
@@ -1529,7 +1615,7 @@ function buildKunderData(){
     var g=map[name]||(map[name]={name:name, clinic:o.practice||"", count:0, cats:{}, last:"", openCount:0});
     g.count++;
     if(o.practice&&!g.clinic)g.clinic=o.practice;
-    if(o.status!=="Ferdig")g.openCount++;
+    if(orderStatus(o)!=="Ferdig")g.openCount++;
     (o.works||[]).forEach(function(w){var c=workCategory(w); g.cats[c]=(g.cats[c]||0)+1;});
     var rd=o.receivedDate||"";
     if(rd&&(!g.last||rd>g.last))g.last=rd;
@@ -1732,7 +1818,7 @@ function statistikkHtml(){
 
 function renderDagsorden(){
   var box=document.getElementById("screen-dagsorden");if(!box)return;
-  var open=orders.filter(function(o){return o.status!=="Ferdig";});
+  var open=orders.filter(function(o){return orderStatus(o)!=="Ferdig";});
   // Buckets
   var snarest=[],overdue=[],heute=[],morgen=[],uke=[],senere=[],udatert=[];
   var _wk=weekRange(0); // Monday..Sunday of the CURRENT calendar week
@@ -1757,7 +1843,6 @@ function renderDagsorden(){
     var dent=esc(o.dentist||"")+(o.practice?" · "+esc(o.practice):"");
     var work=esc(worksSummary(o));
     return '<div style="display:flex;align-items:flex-start;gap:10px;padding:12px 14px;border:1px solid #E3E1D8;border-radius:12px;margin-bottom:8px;background:#fff;">'
-      +'<button class="btn" data-levert="'+o.id+'" title="Merk som levert" style="flex-shrink:0;width:40px;height:40px;border-radius:50%;border:2px solid '+TEAL+';background:#fff;color:'+TEAL+';font-size:18px;font-weight:700;cursor:pointer;padding:0;">&#10003;</button>'
       +'<button class="dagsorden-open" data-open="'+o.id+'" style="flex:1;text-align:left;background:none;border:none;cursor:pointer;padding:0;">'
       +'<div style="font-size:15px;font-weight:700;color:#1C2823;">'+work+'</div>'
       +'<div style="font-size:13px;color:'+MUTED+';margin-top:2px;">'+who+'</div>'
@@ -1790,15 +1875,6 @@ function renderDagsorden(){
   // Bind
   var _wp=document.getElementById("d-weekprint"); if(_wp)_wp.onclick=function(){printWeekList(0);};
   var _wpn=document.getElementById("d-weekprint-next"); if(_wpn)_wpn.onclick=function(){printWeekList(1);};
-  box.querySelectorAll("[data-levert]").forEach(function(b){
-    b.onclick=function(){
-      var id=b.getAttribute("data-levert");
-      confirm2("Merke som levert? Arbeidet flyttes ut av dagsorden, men beholdes i arkivet.","Levert",function(){
-        orders=orders.map(function(o){return o.id===id?Object.assign({},o,{status:"Ferdig"}):o;});
-        saveOrders();renderDagsorden();updateNavCount();
-      });
-    };
-  });
   box.querySelectorAll("[data-open]").forEach(function(b){
     b.onclick=function(){
       var id=b.getAttribute("data-open");
@@ -1820,12 +1896,11 @@ function renderDetail(){
   for(var i=0;i<count;i++){var r=ST_get("sd-img-"+o.id+"-"+i);if(r)imgs.push(r);}
   if(!imgs.length){var r2=ST_get("sd-img-"+o.id);if(r2)imgs.push(r2);}
   if(imgs.length)h+='<div style="margin-top:16px;"><div class="disp" style="font-size:14px;font-weight:600;color:'+MUTED+';margin-bottom:8px;">'+(imgs.length>1?"Originalbilder ("+imgs.length+")":"Originalbilde")+'</div>'+imgs.map(function(s,i){return'<img src="'+s+'" alt="Original '+(i+1)+'" style="border-radius:12px;width:100%;border:1px solid #DCD8CC;margin-bottom:12px;">';}).join("")+'</div>';
-  if(o.linkedOrders&&o.linkedOrders.length)h+='<div class="alert-ivory" style="margin-top:16px;"><div class="disp" style="font-size:14px;font-weight:600;color:'+TEAL+';margin-bottom:8px;">&#128279; Del av sak</div>'+o.linkedOrders.map(function(id){var lk=orders.filter(function(x){return x.id===id;})[0];return'<button data-no="'+esc(id)+'" style="width:100%;text-align:left;border-radius:8px;display:flex;align-items:center;gap:8px;font-size:14px;background:#fff;border:1px solid '+LINE+';padding:8px 12px;margin-bottom:4px;cursor:pointer;"><span class="mono" style="font-size:12px;font-weight:600;color:'+TEAL+'">'+esc(id)+'</span><span style="flex:1;color:#1C2823;">'+esc(lk?worksSummary(lk):"–")+'</span><span style="font-size:12px;color:'+MUTED+'">'+esc((lk&&lk.status)||"")+'</span></button>';}).join("")+'</div>';
-  h+='<div class="g2" style="margin-top:20px;"><button class="btn btn-outline" id="d-status">Status: '+esc(o.status)+' &#8594;</button><button class="btn btn-teal" id="d-print">&#128424; Skriv ut</button><button class="btn btn-ghost" id="d-edit">Rediger</button><button class="btn btn-outline" id="d-link">&#128279; Knytt til ordre</button><button class="btn" id="d-del" style="background:#fff;color:'+SIGNAL+';border:1px solid '+SIGNAL+';">Slett</button></div>';
+  if(o.linkedOrders&&o.linkedOrders.length)h+='<div class="alert-ivory" style="margin-top:16px;"><div class="disp" style="font-size:14px;font-weight:600;color:'+TEAL+';margin-bottom:8px;">&#128279; Del av sak</div>'+o.linkedOrders.map(function(id){var lk=orders.filter(function(x){return x.id===id;})[0];return'<button data-no="'+esc(id)+'" style="width:100%;text-align:left;border-radius:8px;display:flex;align-items:center;gap:8px;font-size:14px;background:#fff;border:1px solid '+LINE+';padding:8px 12px;margin-bottom:4px;cursor:pointer;"><span class="mono" style="font-size:12px;font-weight:600;color:'+TEAL+'">'+esc(id)+'</span><span style="flex:1;color:#1C2823;">'+esc(lk?worksSummary(lk):"–")+'</span><span style="font-size:12px;color:'+MUTED+'">'+esc(lk?orderStatus(lk):"")+'</span></button>';}).join("")+'</div>';
+  h+='<div class="g2" style="margin-top:20px;"><button class="btn btn-teal" id="d-print">&#128424; Skriv ut</button><button class="btn btn-ghost" id="d-edit">Rediger</button><button class="btn btn-outline" id="d-link">&#128279; Knytt til ordre</button><button class="btn" id="d-del" style="background:#fff;color:'+SIGNAL+';border:1px solid '+SIGNAL+';">Slett</button></div>';
   document.getElementById("detail-page").innerHTML=h;
   document.getElementById("btn-back").onclick=function(){showScreen("list");};
-  document.getElementById("d-status").onclick=function(){var i=(STATUSES.indexOf(o.status)+1)%STATUSES.length;orders=orders.map(function(x){return x.id===o.id?Object.assign({},x,{status:STATUSES[i]}):x;});detailOrder=orders.filter(function(x){return x.id===o.id;})[0];saveOrders();renderDetail();};
-  var _doPrint=function(){
+  var _doPrintCss=function(){
     var _pa=document.getElementById("print-area");
     _pa.className="mode-slip";
     // Rotated 90° CW, placed in the lower half but kept comfortably within one page, so iOS does not push a
@@ -1858,6 +1933,9 @@ function renderDetail(){
     var _after=function(){ window.removeEventListener("afterprint",_after); showScreen("list"); };
     window.addEventListener("afterprint",_after);
     window.print();
+  };
+  var _doPrint=function(){
+    printSlipPdf(o).then(function(ok){ if(!ok) _doPrintCss(); }).catch(function(){ _doPrintCss(); });
   };
   var _dpt=document.getElementById("d-print-top"); if(_dpt)_dpt.onclick=_doPrint;
   document.getElementById("d-print").onclick=_doPrint;
