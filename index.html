@@ -2139,7 +2139,7 @@ function renderSettings(){
   var _at=document.getElementById("api-toggle"); if(_at)_at.onclick=function(){_apiOpen=!_apiOpen;renderSettings();};
   var _ms=document.getElementById("mdl-sonnet"); if(_ms)_ms.onclick=function(){saveModel(MODEL_SONNET);renderSettings();};
   var _mo=document.getElementById("mdl-opus"); if(_mo)_mo.onclick=function(){saveModel(MODEL_OPUS);renderSettings();};
-  var _sk=document.getElementById("s-savekey");if(_sk)_sk.onclick=function(){var raw0=(document.getElementById("s-apikey").value||"");var v=cleanApiKey(raw0);var removed=raw0.trim().length-v.length;if(v){ST_set(AKEY,v);API_KEY=v;alert("API-nøkkel lagret."+(removed>0?" ("+removed+" usynlige/ugyldige tegn ble fjernet)":""));renderSettings();}else{alert("Lim inn en gyldig nøkkel først.");}};
+  var _sk=document.getElementById("s-savekey");if(_sk)_sk.onclick=function(){var raw0=(document.getElementById("s-apikey").value||"");var v=cleanApiKey(raw0);var removed=raw0.trim().length-v.length;if(v){ST_set(AKEY,v);API_KEY=v;var msg="API-nøkkel lagret."+(removed>0?" ("+removed+" usynlige/ugyldige tegn ble fjernet)":"");if(!/^sk-ant-api/.test(v)||v.length<80){msg+="\n\n⚠ Nøkkelen ser ødelagt ut ("+v.length+" tegn"+(!/^sk-ant-api/.test(v)?", mangler sk-ant-api-prefikset":"")+"). Ikke kopier fra e-post/notat: åpne console.anthropic.com i Safari på DENNE iPaden, lag en ny nøkkel og bruk kopiknappen.";}alert(msg);renderSettings();}else{alert("Lim inn en gyldig nøkkel først.");}};
   var _ck=document.getElementById("s-clearkey");if(_ck)_ck.onclick=function(){confirm2("Fjerne lagret API-nøkkel?","Fjern",function(){ST_del(AKEY);API_KEY="";renderSettings();});};
   var ni=document.getElementById("s-newtmpl"),pr=document.getElementById("s-preview");
   if(ni){
@@ -2218,7 +2218,7 @@ document.getElementById("btn-diag").onclick=async function(){
   var out=document.getElementById("diag-out");out.style.display="block";
   var L=[];function show(){out.textContent=L.join("\n");}
   var key=storedApiKey();
-  L.push(key?("Nøkkel: "+key.slice(0,12)+"…"+key.slice(-4)+" ("+key.length+" tegn)"):"✗ Ingen API-nøkkel lagret");show();
+  L.push(key?("Nøkkel: "+key.slice(0,12)+"…"+key.slice(-4)+" ("+key.length+" tegn)"+((/^sk-ant-api/.test(key)&&key.length>=80)?"":" ⚠ ser ødelagt ut (skal starte med sk-ant-api, ca. 108 tegn)")):"✗ Ingen API-nøkkel lagret");show();
   try{await fetch(window.location.href,{cache:"no-store"});L.push("✓ Internett (nettsiden): OK");}catch(e){L.push("✗ Internett: "+(e&&e.message?e.message:String(e)));}
   show();
   try{
