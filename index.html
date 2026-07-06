@@ -1429,8 +1429,19 @@ function openExport(){
   if(!orders.length)return;
   buildBackup().then(function(t){
     document.getElementById("export-text").value=t;
-    document.getElementById("export-sheet").style.display="flex";
+    showExportSheet(false);
   });
+}
+// One sheet, two honest modes: backup vs. learning log
+function showExportSheet(learnlog){
+  _learnlogPending=!!learnlog;
+  document.getElementById("export-title").textContent=learnlog?"Læringslogg":"Sikkerhetskopi";
+  document.getElementById("export-hint").textContent=learnlog
+    ?"AI-forslag vs. dine korrigeringer – grunnlag for bedre leseregler. Kopier teksten (lim inn i chatten) eller last ned som .txt. Loggen merkes da som sendt."
+    :"Inkluderer ordrer og bilder av seddlene. Last ned filen og lagre den i Filer, iCloud eller Dropbox. Da kan alt hentes inn igjen senere.";
+  document.getElementById("export-download").innerHTML=learnlog?"&#8595; Last ned læringslogg (.txt)":"&#8595; Last ned sikkerhetskopi-fil";
+  var det=document.querySelector("#export-sheet details");if(det)det.open=!!learnlog;
+  document.getElementById("export-sheet").style.display="flex";
 }
 function downloadBackup(){
   if(!orders.length)return;
@@ -2337,19 +2348,34 @@ document.getElementById("btn-learnlog").onclick=function(){
   if(newCount===0){
     confirm2("Ingen nye ordrer siden forrige eksport. Vil du eksportere ALLE ordrer på nytt?","Ja, alle",function(){
       document.getElementById("export-text").value=buildLearningLog(true);
-      document.getElementById("export-sheet").style.display="flex";
+      showExportSheet(true);
     });
     return;
   }
   document.getElementById("export-text").value=buildLearningLog(false);
-  document.getElementById("export-sheet").style.display="flex";
-  _learnlogPending=true;  // remember this was a learnlog export
+  showExportSheet(true);
 };
-document.getElementById("export-download").onclick=function(){downloadBackup();};
+document.getElementById("export-download").onclick=function(){
+  if(_learnlogPending){
+    var txt=document.getElementById("export-text").value||"";
+    var d=new Date();var stamp=d.getFullYear()+pad(d.getMonth()+1)+pad(d.getDate())+"-"+pad(d.getHours())+pad(d.getMinutes());
+    try{
+      var blob=new Blob([txt],{type:"text/plain;charset=utf-8"});
+      var url=URL.createObjectURL(blob);
+      var a=document.createElement("a");a.href=url;a.download="sd-ordreflyt-laeringslogg-"+stamp+".txt";
+      document.body.appendChild(a);a.click();
+      setTimeout(function(){document.body.removeChild(a);URL.revokeObjectURL(url);},1000);
+      markAllExported();
+      var btn=document.getElementById("export-download");var o=btn.innerHTML;btn.innerHTML="Lastet ned \u2713 \u2013 logg merket som sendt";setTimeout(function(){btn.innerHTML=o;},2500);
+    }catch(e){alert("Kunne ikke laste ned p\u00e5 denne enheten. Kopier teksten i stedet (feltet er \u00e5pent under).");}
+    return;
+  }
+  downloadBackup();
+};
 document.getElementById("export-copy").onclick=function(){
   var ta=document.getElementById("export-text");ta.select();
   try{navigator.clipboard.writeText(ta.value).catch(function(){});}catch(e){}
-  if(_learnlogPending){markAllExported();_learnlogPending=false;
+  if(_learnlogPending){markAllExported();
     var btn=document.getElementById("export-copy");var orig=btn.textContent;
     btn.textContent="Kopiert ✓ – merket som sendt";
     setTimeout(function(){btn.textContent=orig;},2500);
