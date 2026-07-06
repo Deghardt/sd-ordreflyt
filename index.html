@@ -854,11 +854,16 @@ function shrink(dataUrl,maxSide,q,rot){rot=rot||0;return new Promise(function(ok
 // API
 function sleep(ms){return new Promise(function(r){setTimeout(r,ms);});}
 function parseSse(raw){var t="",saw=false;raw.split("\n").forEach(function(line){var l=line.trim();if(!l.startsWith("data:"))return;var p=l.slice(5).trim();if(!p||p==="[DONE]")return;var ev;try{ev=JSON.parse(p);}catch(e){return;}saw=true;if(ev.type==="content_block_delta"&&ev.delta&&ev.delta.text)t+=ev.delta.text;else if(ev.type==="content_block_start"&&ev.content_block&&ev.content_block.text)t+=ev.content_block.text;else if(typeof ev.completion==="string")t+=ev.completion;});return saw?{content:[{type:"text",text:t}]}:null;}
+// API key hygiene: keys are printable ASCII; pasted keys often carry invisible Unicode
+// characters (zero-width space, non-breaking hyphen). Those make fetch() throw a TypeError
+// BEFORE any network contact, which used to surface as a generic "nettverksfeil".
+function cleanApiKey(v){return String(v||"").replace(/[^\x21-\x7E]/g,"");}
+function storedApiKey(){var raw=ST_get(AKEY)||"";var c=cleanApiKey(raw);if(c!==raw&&c){try{ST_set(AKEY,c);API_KEY=c;}catch(_e){}}return c;}
 async function callApi(content,attempt){
-  if(!(ST_get(AKEY)||"")){throw new Error("Ingen API-nøkkel. Gå til Innstillinger og lim inn nøkkelen din.");}
+  if(!storedApiKey()){throw new Error("Ingen API-nøkkel. Gå til Innstillinger og lim inn nøkkelen din.");}
   attempt=attempt||0;var res,raw;var MAXTRY=4;var backoff=700*Math.pow(2,attempt);
-  try{res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":(ST_get(AKEY)||""),"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:JSON.stringify({model:loadModel(),max_tokens:2000,messages:[{role:"user",content:content}]})});raw=await res.text();}
-  catch(e){if(attempt<MAXTRY){await sleep(backoff);return callApi(content,attempt+1);}throw new Error("nettverksfeil – sjekk internett og prøv igjen");}
+  try{res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":storedApiKey(),"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:JSON.stringify({model:loadModel(),max_tokens:2000,messages:[{role:"user",content:content}]})});raw=await res.text();}
+  catch(e){if(attempt<MAXTRY){await sleep(backoff);return callApi(content,attempt+1);}throw new Error("nettverksfeil – sjekk internett og prøv igjen ("+(e&&e.message?e.message:String(e))+")");}
   if((res.status===429||res.status===529||res.status>=500)&&attempt<MAXTRY){await sleep(backoff);return callApi(content,attempt+1);}
   if(!raw||!raw.trim()){if(attempt<MAXTRY){await sleep(backoff);return callApi(content,attempt+1);}throw new Error("tomt svar fra tjenesten – prøv igjen om litt (tjenesten er travel)");}
   var data=null;try{data=JSON.parse(raw);}catch(e){data=parseSse(raw);}
@@ -944,7 +949,7 @@ function slipHtml(o,screen,scale){
   if(o.sentDate)h+=dline("Dato sendt",fmtDate(o.sentDate));
   h+=dline("Ank. lab",fmtDate(o.receivedDate)+(o.receivedTime?" kl. "+o.receivedTime:""));
   others.forEach(function(a){h+=dline(a.label||"Prøve",fmtDate(a.date)+(a.time?" kl. "+a.time:""));});h+='</div>';
-  h+=srow("Underlag",o.kind==="scan"?"Digital scan":"Fysisk avtrykk");
+  h+=srow("Underlag",o.kind==="scan"?"Scan":"Avtrykk");
   if(o.kind==="avtrykk")h+=srow("Antall mottatt",antallLine(o));
   h+=srow("Merknader",o.remarks);
   h+=srow("Farge",o.shade,true,true,!needsFdi(o));
@@ -994,7 +999,7 @@ function renderReview(){
   if(allKl.length)h+='<div class="alert-red"><div class="disp" style="font-size:14px;font-weight:700;color:'+SIGNAL+';margin-bottom:8px;">&#9888;&#65039; MÅ AVKLARES MED KUNDEN</div><ul style="margin:0;padding-left:18px;">'+allKl.map(function(x){return'<li style="font-size:14px;color:#1C2823;margin-bottom:3px;">'+esc(x)+'</li>';}).join('')+'</ul></div>';
   if(!editingId&&photos[0])h+='<div class="card-ivory"><div class="disp" style="font-size:14px;font-weight:600;color:'+SIGNAL+';margin-bottom:4px;">ARKIVBILDE</div><div style="font-size:12px;color:'+MUTED+';margin-bottom:12px;">Sjekk at teksten står oppreist.</div><div style="display:flex;align-items:center;gap:12px;"><div style="width:120px;height:120px;overflow:hidden;border-radius:8px;border:1px solid '+LINE+';background:#fff;flex-shrink:0;display:flex;align-items:center;justify-content:center;"><img src="'+photos[0].preview+'" id="rot-img" style="max-width:100%;max-height:100%;transform:rotate('+(f.rotateCW||0)+'deg);transition:transform .2s;"></div><button class="btn-sm btn-teal" id="btn-rotate" style="padding:12px 20px;">&#8635; Drei 90°</button></div></div>';
   // Underlag
-  h+='<div class="card"><div class="lbl">Underlag</div><div style="display:flex;gap:8px;margin-bottom:4px;"><button class="tog" data-kind="avtrykk" style="background:'+(f.kind==="avtrykk"?TEAL:"#fff")+';color:'+(f.kind==="avtrykk"?"#fff":MUTED)+';border:1px solid '+(f.kind==="avtrykk"?TEAL:LINE)+';">Fysisk avtrykk</button><button class="tog" data-kind="scan" style="background:'+(f.kind==="scan"?TEAL:"#fff")+';color:'+(f.kind==="scan"?"#fff":MUTED)+';border:1px solid '+(f.kind==="scan"?TEAL:LINE)+';">Digital scan</button></div>';
+  h+='<div class="card"><div class="lbl">Underlag</div><div style="display:flex;gap:8px;margin-bottom:4px;"><button class="tog" data-kind="avtrykk" style="background:'+(f.kind==="avtrykk"?TEAL:"#fff")+';color:'+(f.kind==="avtrykk"?"#fff":MUTED)+';border:1px solid '+(f.kind==="avtrykk"?TEAL:LINE)+';">Avtrykk</button><button class="tog" data-kind="scan" style="background:'+(f.kind==="scan"?TEAL:"#fff")+';color:'+(f.kind==="scan"?"#fff":MUTED)+';border:1px solid '+(f.kind==="scan"?TEAL:LINE)+';">Scan</button></div>';
   if(f.kind==="avtrykk")
   h+='</div>';
   // Datoer
@@ -2134,7 +2139,7 @@ function renderSettings(){
   var _at=document.getElementById("api-toggle"); if(_at)_at.onclick=function(){_apiOpen=!_apiOpen;renderSettings();};
   var _ms=document.getElementById("mdl-sonnet"); if(_ms)_ms.onclick=function(){saveModel(MODEL_SONNET);renderSettings();};
   var _mo=document.getElementById("mdl-opus"); if(_mo)_mo.onclick=function(){saveModel(MODEL_OPUS);renderSettings();};
-  var _sk=document.getElementById("s-savekey");if(_sk)_sk.onclick=function(){var v=(document.getElementById("s-apikey").value||"").trim();if(v){ST_set(AKEY,v);API_KEY=v;alert("API-nøkkel lagret.");renderSettings();}else{alert("Lim inn en gyldig nøkkel først.");}};
+  var _sk=document.getElementById("s-savekey");if(_sk)_sk.onclick=function(){var raw0=(document.getElementById("s-apikey").value||"");var v=cleanApiKey(raw0);var removed=raw0.trim().length-v.length;if(v){ST_set(AKEY,v);API_KEY=v;alert("API-nøkkel lagret."+(removed>0?" ("+removed+" usynlige/ugyldige tegn ble fjernet)":""));renderSettings();}else{alert("Lim inn en gyldig nøkkel først.");}};
   var _ck=document.getElementById("s-clearkey");if(_ck)_ck.onclick=function(){confirm2("Fjerne lagret API-nøkkel?","Fjern",function(){ST_del(AKEY);API_KEY="";renderSettings();});};
   var ni=document.getElementById("s-newtmpl"),pr=document.getElementById("s-preview");
   if(ni){
@@ -2210,11 +2215,21 @@ document.getElementById("file-input").onchange=async function(e){
 document.getElementById("btn-manual").onclick=function(){form=emptyForm();editingId=null;reviewRelated=[];reviewUpdateCand=null;setError("");renderReview();showScreen("review");};
 document.getElementById("btn-extract").onclick=runExtraction;
 document.getElementById("btn-diag").onclick=async function(){
-  var out=document.getElementById("diag-out");out.textContent="Tester …";out.style.display="block";
-  var tr,ir;
-  try{await callApi([{type:"text",text:"Svar kun med ordet OK"}]);tr="✓ Tekstforespørsel: OK";}catch(e){tr="✗ "+e.message;}
-  try{var cv=document.createElement("canvas");cv.width=96;cv.height=64;var ctx=cv.getContext("2d");ctx.fillStyle="#fff";ctx.fillRect(0,0,96,64);ctx.fillStyle="#000";ctx.font="bold 32px sans-serif";ctx.fillText("A2",20,44);var b64=cv.toDataURL("image/jpeg",0.8).split(",")[1];await callApi([{type:"image",source:{type:"base64",media_type:"image/jpeg",data:b64}},{type:"text",text:"Hva står på bildet? Svar kort."}]);ir="✓ Bildeforespørsel: OK";}catch(e){ir="✗ "+e.message;}
-  out.textContent=tr+"\n"+ir;
+  var out=document.getElementById("diag-out");out.style.display="block";
+  var L=[];function show(){out.textContent=L.join("\n");}
+  var key=storedApiKey();
+  L.push(key?("Nøkkel: "+key.slice(0,12)+"…"+key.slice(-4)+" ("+key.length+" tegn)"):"✗ Ingen API-nøkkel lagret");show();
+  try{await fetch(window.location.href,{cache:"no-store"});L.push("✓ Internett (nettsiden): OK");}catch(e){L.push("✗ Internett: "+(e&&e.message?e.message:String(e)));}
+  show();
+  try{
+    var r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:JSON.stringify({model:loadModel(),max_tokens:1,messages:[{role:"user",content:"OK"}]})});
+    if(r.ok){L.push("✓ Anthropic API + nøkkel: OK");}
+    else if(r.status===401){L.push("✗ Nøkkelen ble avvist (401). Lim inn nøkkelen på nytt i Innstillinger.");}
+    else{var tx="";try{tx=(await r.text()).slice(0,140);}catch(_e){}L.push("✗ API-svar HTTP "+r.status+(tx?": "+tx:""));}
+  }catch(e){L.push("✗ api.anthropic.com nås ikke: "+(e&&e.message?e.message:String(e))+" – tyder på DNS-filter, brannmur eller Skjermtid-begrensning på enheten/nettet");}
+  show();
+  try{var cv=document.createElement("canvas");cv.width=96;cv.height=64;var ctx=cv.getContext("2d");ctx.fillStyle="#fff";ctx.fillRect(0,0,96,64);ctx.fillStyle="#000";ctx.font="bold 32px sans-serif";ctx.fillText("A2",20,44);var b64=cv.toDataURL("image/jpeg",0.8).split(",")[1];await callApi([{type:"image",source:{type:"base64",media_type:"image/jpeg",data:b64}},{type:"text",text:"Hva står på bildet? Svar kort."}]);L.push("✓ Bildeforespørsel (KI-lesing): OK");}catch(e){L.push("✗ Bildeforespørsel: "+(e&&e.message?e.message:String(e)));}
+  show();
 };
 document.getElementById("search-inp").oninput=renderList;
 document.getElementById("btn-export").onclick=function(){openExport();};
