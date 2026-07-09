@@ -88,6 +88,10 @@ textarea.inp{resize:vertical;}
   /* Kept well within one page (top spacer + slip band) so iOS never spills a sliver onto a 2nd page. */
   #print-area.mode-slip{ width:210mm; overflow:hidden; page-break-inside:avoid; }
   #print-area.mode-slip .slip-spacer{ height:150mm; }   /* blank upper half; fold across the middle = A5 */
+  #print-area.mode-slip .steps-rot{
+    height:148mm;                                        /* upper band = left half in landscape */
+    display:flex; align-items:center; justify-content:center; overflow:hidden;
+  }
   #print-area.mode-slip .slip-rot{
     height:130mm;                                        /* lower band, kept clear of the bottom edge */
     display:flex; align-items:center; justify-content:center; overflow:hidden;
@@ -223,7 +227,7 @@ var Y_OPT=["okj","ukj","okj+ukj"];
 var STATUSES=["I arbeid","Ferdig"];
 var _listStatusFilter="Alle"; // list status filter: Alle | Ny | I arbeid | Ferdig
 var _dagsordenWeek=0; // 0=aktuelle Kalenderwoche, negativ=Vergangenheit, positiv=Zukunft
-var OKEY="sd-orders-v2",CKEY="sd-catalog-v1",LLKEY="sd-learnlog-exported-v1",BKEY="sd-lastbackup-v1",AKEY="sd-apikey-v1",DKEY="sd-dentists-v1",NKEY="sd-customer-notes-v1",PWKEY="sd-kunder-pw-v1",CRULESKEY="sd-customer-rules-v1",MKEY="sd-model-v1",ARCHKEY="sd-archived-months-v1";
+var OKEY="sd-orders-v2",CKEY="sd-catalog-v1",LLKEY="sd-learnlog-exported-v1",BKEY="sd-lastbackup-v1",AKEY="sd-apikey-v1",DKEY="sd-dentists-v1",NKEY="sd-customer-notes-v1",PWKEY="sd-kunder-pw-v1",CRULESKEY="sd-customer-rules-v1",MKEY="sd-model-v1",ARCHKEY="sd-archived-months-v1",WSKEY="sd-worksteps-v1";
 var MODEL_SONNET="claude-sonnet-4-6",MODEL_OPUS="claude-opus-4-8";
 var UPPER=["18","17","16","15","14","13","12","11","21","22","23","24","25","26","27","28"];
 var LOWER=["48","47","46","45","44","43","42","41","31","32","33","34","35","36","37","38"];
@@ -509,6 +513,75 @@ function saveExportedIds(ids){ST_set(LLKEY,JSON.stringify(ids));}
 function markAllExported(){var ids=orders.map(function(o){return o.id;});saveExportedIds(ids);}
 function loadCatalog(){try{var r=ST_get(CKEY);if(r){var a=JSON.parse(r);if(Array.isArray(a)&&a.length)return a;}}catch(e){}return DEFAULT_TEMPLATES.slice();}
 function saveCatalog(){ST_set(CKEY,JSON.stringify(catalog));}
+// ---- MDR work steps: per product template -> {steps:[..], lot:"label"} (editable in Settings) ----
+var WORKSTEPS={};
+function defaultStepsFor(name){
+  var n=(name||"").toLowerCase();
+  if(/zirkon/.test(n))return {steps:/sjikt/.test(n)?["Gips","Design/Sintring","Keramikk"]:["Gips","Design/Sintring","Tilpasning"],lot:"Lotnr. zirkonia-blank"};
+  if(/e\.?max/.test(n))return {steps:["Gips","Design","Tilpasning"],lot:"Lotnr. e.max"};
+  if(/\bmk\b|mk-/.test(n))return {steps:["Gips","Design/Sliping av CoCr","Keramikk"],lot:"Lotnr. CoCr-pulver"};
+  if(/vitallium|kobolt|co-?cr/.test(n))return {steps:["Gips","Design/Sliping av CoCr"],lot:"Lotnr. CoCr-pulver"};
+  if(/skinne/.test(n))return {steps:["Gips","Design","Skinneproduksjon"],lot:""};
+  if(/rebasering/.test(n))return {steps:["Gips","Akrylering"],lot:""};
+  if(/protese|\bho\b|\bhu\b|\bpo\b|\bpu\b|tannoppstilling/.test(n))return {steps:["Gips","Tannoppstilling","Akrylering"],lot:""};
+  if(/implantat/.test(n))return {steps:["Gips","Design/Sintring","Tilpasning"],lot:"Lotnr. zirkonia-blank"};
+  return {steps:[],lot:""};
+}
+function loadWorkSteps(){
+  var m={};
+  try{var r=ST_get(WSKEY);if(r){var pm=JSON.parse(r);if(pm&&typeof pm==="object")m=pm;}}catch(e){}
+  var changed=false;
+  catalog.forEach(function(t){ if(!Object.prototype.hasOwnProperty.call(m,t)){ m[t]=defaultStepsFor(t); changed=true; } });
+  if(changed)ST_set(WSKEY,JSON.stringify(m));
+  return m;
+}
+function saveWorkSteps(){ST_set(WSKEY,JSON.stringify(WORKSTEPS));}
+function stepsForOrder(o){
+  var steps=[],lots=[];
+  (o.works||[]).forEach(function(w){
+    var ent=(!w.free&&w.template!==FREE_LABEL&&WORKSTEPS[w.template])?WORKSTEPS[w.template]:defaultStepsFor(buildWorkText(w));
+    var wtxt=buildWorkText(w).toLowerCase();
+    (ent.steps||[]).forEach(function(st){
+      if(st==="Gips"){
+        if(wtxt.indexOf("modellfri")>=0)return;
+        if(o.kind==="scan")st="3D-modell";
+      }
+      if(steps.indexOf(st)<0)steps.push(st);
+    });
+    if(ent.lot&&lots.indexOf(ent.lot)<0)lots.push(ent.lot);
+  });
+  if((steps.length||lots.length)&&steps.indexOf("Sluttkontroll")<0)steps.push("Sluttkontroll"); // mandatory final check, enforced at render
+  return {steps:steps,lots:lots};
+}
+function stepsHtml(o){
+  var sp=stepsForOrder(o);
+  if(!sp.steps.length&&!sp.lots.length)return "";
+  var fa=finalAppt(o);
+  var DW=92,SW=126; // matrix column widths: date, signature
+  function ul(w){return '<span style="display:inline-block;border-bottom:1.2px solid #555;width:'+w+'px;height:13px;vertical-align:bottom;"></span>';}
+  function cellHead(w,t){return '<div class="mono" style="width:'+w+'px;flex:0 0 '+w+'px;font-size:10px;letter-spacing:1.5px;color:'+MUTED+';">'+t+'</div>';}
+  function cellLine(w){return '<div style="width:'+w+'px;flex:0 0 '+w+'px;">'+ul(w-10)+'</div>';}
+  function row(nameHtml){
+    return '<div style="display:flex;align-items:flex-end;gap:12px;padding:10px 0;border-bottom:1px solid #DCD8CC;">'
+      +'<div style="flex:1;font-size:15px;font-weight:600;color:#1C2823;">'+nameHtml+'</div>'
+      +cellLine(DW)+cellLine(SW)+'</div>';
+  }
+  var h='<div style="background:#fff;border:2px solid #14243B;border-radius:4px;padding:18px 20px;">';
+  h+='<div style="display:flex;justify-content:space-between;align-items:baseline;border-bottom:2px solid #14243B;padding-bottom:8px;">'
+    +'<div class="mono" style="font-size:13px;font-weight:700;letter-spacing:2px;color:#14243B;">ARBEIDSTRINN</div>'
+    +'<div class="mono" style="font-size:12px;color:#14243B;">'+esc(o.id)+'</div></div>';
+  h+='<div class="mono" style="font-size:11px;color:'+MUTED+';padding:6px 0 2px;">'+esc(o.patientInitials||"?")+(o.patientNumber?' \u00b7 '+esc(o.patientNumber):'')+' \u00b7 Ferdig: '+(fa&&fa.asap?"Snarest":(fa&&fa.date?fmtDate(fa.date):"\u2013"))+'</div>';
+  h+='<div style="display:flex;align-items:flex-end;gap:12px;padding:8px 0 2px;"><div style="flex:1;"></div>'+cellHead(DW,"DATO")+cellHead(SW,"SIGN.")+'</div>';
+  sp.steps.forEach(function(st){ h+=row(esc(st)); });
+  for(var i=0;i<2;i++){ h+=row(ul(130)); }
+  if(sp.lots.length){
+    h+='<div style="padding-top:12px;">';
+    sp.lots.forEach(function(l){h+='<div class="mono" style="font-size:13px;font-weight:600;color:#14243B;padding:7px 0;">'+esc(l)+': '+ul(180)+'</div>';});
+    h+='</div>';
+  }
+  h+='</div>';
+  return h;
+}
 // KI model for image extraction. Default = Sonnet; only switches to Opus when explicitly chosen.
 function loadModel(){var m=ST_get(MKEY);return m===MODEL_OPUS?MODEL_OPUS:MODEL_SONNET;}
 function saveModel(m){ST_set(MKEY,m===MODEL_OPUS?MODEL_OPUS:MODEL_SONNET);}
@@ -587,13 +660,33 @@ function printSlipPdf(o){
       var x=(PW-drawW)/2;                     // centred
       var y=(PH-MB)-drawH;                     // bottom edge MB from paper edge
       doc.addImage(imgData,"PNG",x,y,drawW,drawH);
-      var blob=doc.output("blob");
-      var file=new File([blob],"arbeidsseddel.pdf",{type:"application/pdf"});
-      if(navigator.canShare&&navigator.canShare({files:[file]})){
-        return navigator.share({files:[file],title:"Arbeidsseddel"}).then(function(){return true;},
-          function(e){ if(e&&e.name==="AbortError")return true; var u=URL.createObjectURL(blob); window.location.href=u; return true; });
+      // MDR work-step half on the upper (left-in-landscape) side, anchored towards the fold
+      var sh=stepsHtml(o);
+      var stepsP=Promise.resolve(null);
+      if(sh){
+        var host2=document.createElement("div");
+        host2.style.cssText="position:fixed;left:-10000px;top:0;background:#fff;z-index:-1;";
+        host2.innerHTML='<div id="__stepsfit" style="width:430px;background:#fff;">'+sh+'</div>';
+        document.body.appendChild(host2);
+        stepsP=html2canvas(document.getElementById("__stepsfit"),{scale:3,backgroundColor:"#ffffff"}).then(function(c2){
+          document.body.removeChild(host2);
+          var r2=document.createElement("canvas");r2.width=c2.height;r2.height=c2.width;
+          var cx=r2.getContext("2d");cx.translate(r2.width/2,r2.height/2);cx.rotate(Math.PI/2);cx.drawImage(c2,-c2.width/2,-c2.height/2);
+          var AR2=r2.width/r2.height, mW=200, mH=138, dW, dH;
+          if(mW/AR2<=mH){dW=mW;dH=mW/AR2;}else{dH=mH;dW=mH*AR2;}
+          doc.addImage(r2.toDataURL("image/png"),"PNG",(210-dW)/2,146-dH,dW,dH);
+          return null;
+        }).catch(function(){try{document.body.removeChild(host2);}catch(_e){}return null;});
       }
-      var url=URL.createObjectURL(blob); window.location.href=url; return true;
+      return stepsP.then(function(){
+        var blob=doc.output("blob");
+        var file=new File([blob],"arbeidsseddel.pdf",{type:"application/pdf"});
+        if(navigator.canShare&&navigator.canShare({files:[file]})){
+          return navigator.share({files:[file],title:"Arbeidsseddel"}).then(function(){return true;},
+            function(e){ if(e&&e.name==="AbortError")return true; var u=URL.createObjectURL(blob); window.location.href=u; return true; });
+        }
+        var url=URL.createObjectURL(blob); window.location.href=url; return true;
+      });
     });
   }).catch(function(){ try{var h=document.getElementById("__slipfit");if(h&&h.parentNode&&h.parentNode.parentNode)h.parentNode.parentNode.removeChild(h.parentNode);}catch(_){} return false; });
 }
@@ -2063,6 +2156,8 @@ function renderDetail(){
   h+='<button class="btn" id="d-del" style="padding:14px 16px;font-size:15px;background:#fff;color:'+SIGNAL+';border:1px solid '+SIGNAL+';">Slett</button>';
   h+='<div style="font-size:11px;color:'+MUTED+';line-height:1.5;margin-top:2px;">Seddel: nedre halvdel A4, dreid 90&deg;. Brett p&aring; midten = A5. Skalering 100 %.</div>';
   h+='</div></div>';
+  var _sh=stepsHtml(o);
+  if(_sh)h+='<div style="margin-top:20px;"><div class="disp" style="font-size:14px;font-weight:600;color:'+MUTED+';margin-bottom:8px;">Arbeidstrinn (skrives ut p\u00e5 venstre halvdel)</div>'+_sh+'</div>';
   h+='<div id="orig-wrap" style="margin-top:20px;display:none;"></div>';
   if(o.linkedOrders&&o.linkedOrders.length)h+='<div class="alert-ivory" style="margin-top:16px;"><div class="disp" style="font-size:14px;font-weight:600;color:'+TEAL+';margin-bottom:8px;">&#128279; Del av sak</div>'+o.linkedOrders.map(function(id){var lk=orders.filter(function(x){return x.id===id;})[0];return'<button data-no="'+esc(id)+'" style="width:100%;text-align:left;border-radius:8px;display:flex;align-items:center;gap:8px;font-size:14px;background:#fff;border:1px solid '+LINE+';padding:8px 12px;margin-bottom:4px;cursor:pointer;"><span class="mono" style="font-size:12px;font-weight:600;color:'+TEAL+'">'+esc(id)+'</span><span style="flex:1;color:#1C2823;">'+esc(lk?worksSummary(lk):"–")+'</span><span style="font-size:12px;color:'+MUTED+'">'+esc(lk?orderStatus(lk):"")+'</span></button>';}).join("")+'</div>';
   document.getElementById("detail-page").innerHTML=h;
@@ -2084,17 +2179,21 @@ function renderDetail(){
     var boxWpx=Math.round(boxWmm*MM);
     var maxHpx=Math.round(maxHmm*MM);
     var maxVpx=Math.round(maxVmm*MM);
-    _pa.innerHTML='<div class="slip-spacer"></div><div class="slip-rot"><div class="slip-rotbox"><div id="slip-fit" style="width:'+boxWpx+'px;">'+slipHtml(o,false,1)+'</div></div></div>';
+    var shc=stepsHtml(o);
+    _pa.innerHTML=(shc?'<div class="steps-rot"><div class="slip-rotbox"><div id="steps-fit" style="width:'+boxWpx+'px;">'+shc+'</div></div></div>':'<div class="slip-spacer"></div>')
+      +'<div class="slip-rot"><div class="slip-rotbox"><div id="slip-fit" style="width:'+boxWpx+'px;">'+slipHtml(o,false,1)+'</div></div></div>';
     (function(){
-      var fit=document.getElementById("slip-fit"); if(!fit)return;
-      var box=fit.parentNode; // .slip-rotbox
       var s=_pa.style; var save={display:s.display,position:s.position,left:s.left,top:s.top,visibility:s.visibility};
       s.display="block"; s.position="absolute"; s.left="-10000px"; s.top="0"; s.visibility="hidden";
-      box.style.transform="none";
-      var natH=fit.scrollHeight;
-      // Fit to the box on whichever side is limiting (after rotation: height->horizontal, width->vertical).
-      var f=Math.min(maxHpx/natH, maxVpx/boxWpx)*0.99; // tiny safety so the frame does not touch the edge
-      box.style.transform="rotate(90deg) scale("+f.toFixed(3)+")";
+      ["slip-fit","steps-fit"].forEach(function(id){
+        var fit=document.getElementById(id); if(!fit)return;
+        var box=fit.parentNode; // .slip-rotbox
+        box.style.transform="none";
+        var natH=fit.scrollHeight;
+        // Fit to the box on whichever side is limiting (after rotation: height->horizontal, width->vertical).
+        var f=Math.min(maxHpx/natH, maxVpx/boxWpx)*0.99;
+        box.style.transform="rotate(90deg) scale("+f.toFixed(3)+")";
+      });
       s.display=save.display; s.position=save.position; s.left=save.left; s.top=save.top; s.visibility=save.visibility;
     })();
     var _after=function(){ window.removeEventListener("afterprint",_after); showScreen("list"); };
@@ -2227,10 +2326,17 @@ function renderSettings(){
   h+='</div>';
   if(_settingsTab==="produkter"){
   h+='<div class="disp" style="font-size:18px;font-weight:600;color:'+TEAL+';margin-bottom:4px;">Produktkatalog</div>';
-  h+='<p style="font-size:14px;color:'+MUTED+';margin-bottom:16px;">Bruk <span class="mono">{x}</span> for tannnummer og <span class="mono">{y}</span> for kjeve.</p>';
+  h+='<p style="font-size:14px;color:'+MUTED+';margin-bottom:16px;">Bruk <span class="mono">{x}</span> for tannnummer og <span class="mono">{y}</span> for kjeve. Arbeidstrinnene skrives ut p\u00e5 venstre halvdel av seddelen (MDR) med signatur- og datolinjer; tomt felt = ingen trinn. Trinnet <span class="mono">Gips</span> byttes automatisk til <span class="mono">3D-modell</span> ved scan og sl\u00f8yfes ved modellfri. <span class="mono">Sluttkontroll</span> legges ALLTID automatisk til som siste trinn.</p>';
   h+='<div class="card-ivory"><div class="disp" style="font-size:14px;font-weight:600;color:'+SIGNAL+';margin-bottom:8px;">NYTT PRODUKT</div><input class="inp" id="s-newtmpl" placeholder="f.eks. Teleskopkrone {x}"><div id="s-preview" class="mono" style="font-size:12px;color:'+TEAL+';margin-bottom:8px;display:none;"></div><button class="btn-sm btn-teal" id="s-addtmpl">Legg til</button></div>';
   h+='<div class="disp" style="font-size:14px;font-weight:600;color:'+MUTED+';margin:16px 0 8px;">'+catalog.length+' PRODUKTER</div>';
-  h+=catalog.slice().map(function(t,i){return{t:t,i:i};}).sort(function(a,b){return a.t.localeCompare(b.t,"nb");}).map(function(obj){return'<div style="background:#fff;border:1px solid '+LINE+';border-radius:8px;padding:12px;margin-bottom:8px;display:flex;align-items:center;gap:8px;"><div style="flex:1;"><div style="font-size:14px;">'+esc(obj.t)+'</div>'+(tmplNeedsX(obj.t)||tmplNeedsY(obj.t)?'<div class="mono" style="font-size:12px;color:'+MUTED+';margin-top:2px;">'+(tmplNeedsX(obj.t)?"tann ":"")+(tmplNeedsY(obj.t)?"kjeve":"")+'</div>':"")+' </div><button data-dtmpl="'+obj.i+'" style="color:'+SIGNAL+';font-size:14px;padding:0 8px;cursor:pointer;">Slett</button></div>';}).join("");
+  h+=catalog.slice().map(function(t,i){return{t:t,i:i};}).sort(function(a,b){return a.t.localeCompare(b.t,"nb");}).map(function(obj){
+    var ws=WORKSTEPS[obj.t]||{steps:[],lot:""};
+    return'<div style="background:#fff;border:1px solid '+LINE+';border-radius:8px;padding:12px;margin-bottom:8px;">'
+      +'<div style="display:flex;align-items:center;gap:8px;"><div style="flex:1;"><div style="font-size:14px;">'+esc(obj.t)+'</div>'+(tmplNeedsX(obj.t)||tmplNeedsY(obj.t)?'<div class="mono" style="font-size:12px;color:'+MUTED+';margin-top:2px;">'+(tmplNeedsX(obj.t)?"tann ":"")+(tmplNeedsY(obj.t)?"kjeve":"")+'</div>':"")+' </div><button data-dtmpl="'+obj.i+'" style="color:'+SIGNAL+';font-size:14px;padding:0 8px;cursor:pointer;">Slett</button></div>'
+      +'<div style="display:flex;gap:6px;margin-top:8px;">'
+      +'<input class="inp" data-stepsfor="'+esc(obj.t)+'" placeholder="Arbeidstrinn (komma-separert)" value="'+esc((ws.steps||[]).join(", "))+'" style="flex:2;margin-bottom:0;font-size:13px;padding:8px 10px;">'
+      +'<input class="inp" data-lotfor="'+esc(obj.t)+'" placeholder="Lotnr.-etikett" value="'+esc(ws.lot||"")+'" style="flex:1;margin-bottom:0;font-size:13px;padding:8px 10px;">'
+      +'</div></div>';}).join("");
   h+='<button id="s-reset" style="font-size:12px;font-weight:600;text-decoration:underline;color:'+MUTED+';margin-top:16px;cursor:pointer;">Tilbakestill til standardlisten</button>';
   }
   if(_settingsTab==="tannleger"){ h+=renderDentistAdmin(); }
@@ -2266,9 +2372,11 @@ function renderSettings(){
   var ni=document.getElementById("s-newtmpl"),pr=document.getElementById("s-preview");
   if(ni){
     ni.oninput=function(){var v=ni.value.trim();if(v){pr.textContent="Forhåndsvisning: "+v.replace(/\{x\}/g,"14, 21").replace(/\{y\}/g,"okj");pr.style.display="block";}else pr.style.display="none";};
-    document.getElementById("s-addtmpl").onclick=function(){var t=ni.value.trim();if(!t||t===FREE_LABEL||catalog.indexOf(t)>=0)return;catalog=catalog.concat([t]);saveCatalog();renderSettings();};
-    document.querySelectorAll("[data-dtmpl]").forEach(function(b){b.onclick=function(){var i=+b.getAttribute("data-dtmpl");catalog=catalog.filter(function(_,j){return j!==i;});saveCatalog();renderSettings();};});
-    var rs=document.getElementById("s-reset"); if(rs)rs.onclick=function(){confirm2("Tilbakestille produktkatalogen?","Ja, tilbakestill",function(){catalog=DEFAULT_TEMPLATES.slice();saveCatalog();renderSettings();});};
+    document.getElementById("s-addtmpl").onclick=function(){var t=ni.value.trim();if(!t||t===FREE_LABEL||catalog.indexOf(t)>=0)return;catalog=catalog.concat([t]);saveCatalog();WORKSTEPS[t]=defaultStepsFor(t);saveWorkSteps();renderSettings();};
+    document.querySelectorAll("[data-dtmpl]").forEach(function(b){b.onclick=function(){var i=+b.getAttribute("data-dtmpl");var tn=catalog[i];catalog=catalog.filter(function(_,j){return j!==i;});saveCatalog();if(tn&&WORKSTEPS[tn]){delete WORKSTEPS[tn];saveWorkSteps();}renderSettings();};});
+    document.querySelectorAll("[data-stepsfor]").forEach(function(inp){inp.onchange=function(){var t=inp.getAttribute("data-stepsfor");WORKSTEPS[t]=WORKSTEPS[t]||{steps:[],lot:""};WORKSTEPS[t].steps=inp.value.split(",").map(function(x){return x.trim();}).filter(Boolean);saveWorkSteps();};});
+    document.querySelectorAll("[data-lotfor]").forEach(function(inp){inp.onchange=function(){var t=inp.getAttribute("data-lotfor");WORKSTEPS[t]=WORKSTEPS[t]||{steps:[],lot:""};WORKSTEPS[t].lot=inp.value.trim();saveWorkSteps();};});
+    var rs=document.getElementById("s-reset"); if(rs)rs.onclick=function(){confirm2("Tilbakestille produktkatalogen?","Ja, tilbakestill",function(){catalog=DEFAULT_TEMPLATES.slice();saveCatalog();WORKSTEPS=loadWorkSteps();renderSettings();});};
   }
   bindDentistAdmin();
 }
@@ -2331,7 +2439,7 @@ function buildLearningLog(includeAll){
 }
 
 // Init
-orders=loadOrders();catalog=loadCatalog();updateNavCount();
+orders=loadOrders();catalog=loadCatalog();WORKSTEPS=loadWorkSteps();updateNavCount();
 migrateImagesToIdb();
 document.querySelectorAll(".nav-btn").forEach(function(b){b.onclick=function(){var n=b.getAttribute("data-nav");setError("");if(n==="list")renderList();if(n==="dagsorden")renderDagsorden();showScreen(n);};});
 document.getElementById("btn-settings").onclick=function(){setError("");renderSettings();showScreen("settings");};
