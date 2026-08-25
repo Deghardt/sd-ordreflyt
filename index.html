@@ -70,7 +70,7 @@ textarea.inp{resize:vertical;}
 .badge{font-family:'IBM Plex Mono',monospace;font-size:12px;padding:2px 8px;border-radius:999px;display:inline-block;}
 .fdi-cell{width:28px;height:28px;min-width:28px;font-size:10.5px;border-radius:5px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-family:'IBM Plex Mono',monospace;cursor:pointer;border:1px solid #DCD8CC;background:#fff;color:#555;}
 .fdi-cell.on{background:#0E2342;color:#F6F2E8;border-color:#0E2342;font-weight:600;}
-.fdi-cell.ro{cursor:default;}
+.fdi-cell.ro{cursor:default;flex:1 1 0;min-width:0;max-width:28px;width:auto;height:22px;font-size:9px;border-radius:4px;}
 .fdi-sep{width:1px;height:22px;background:#999;flex-shrink:0;margin:0 4px;}
 .overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:900;display:flex;align-items:center;justify-content:center;padding:24px;}
 .modal{background:#fff;border-radius:16px;padding:24px;width:100%;max-width:360px;}
@@ -97,7 +97,7 @@ textarea.inp{resize:vertical;}
     display:flex; align-items:center; justify-content:center; overflow:hidden;
   }
   #print-area.mode-slip .slip-rotbox{ transform-origin:center center; }  /* rotate(90deg)+scale set inline by JS */
-  #print-area.mode-slip .fdi-cell{ width:21px!important; height:21px!important; min-width:21px!important; font-size:10px!important; border-radius:3px!important; }
+  #print-area.mode-slip .fdi-cell{ flex:0 0 auto!important; width:21px!important; height:21px!important; min-width:21px!important; max-width:21px!important; font-size:10px!important; border-radius:3px!important; }
   #print-area.mode-slip .fdi-sep{ margin:0 2px!important; }
   /* ORIGINAL photo print fallback: each image fills a page */
   #print-area.mode-originals{ width:210mm; }
@@ -520,8 +520,8 @@ function defaultStepsFor(name){
   var n=(name||"").toLowerCase();
   if(/zirkon/.test(n))return {steps:/sjikt/.test(n)?["Gips","Design/Sintring","Keramikk"]:["Gips","Design/Sintring","Tilpasning"],lot:"Lotnr. zirkonia-blank"};
   if(/e\.?max/.test(n))return {steps:["Gips","Design","Tilpasning"],lot:"Lotnr. e.max"};
-  if(/\bmk\b|mk-/.test(n))return {steps:["Gips","Design/Sliping av CoCr","Keramikk"],lot:"Lotnr. CoCr-pulver"};
-  if(/vitallium|kobolt|co-?cr/.test(n))return {steps:["Gips","Design/Sliping av CoCr"],lot:"Lotnr. CoCr-pulver"};
+  if(/\bmk\b|mk-/.test(n))return {steps:["Gips","Design/Sliping av CoCr","Keramikk"],lot:"Lotnr. CoCr"};
+  if(/vitallium|kobolt|co-?cr/.test(n))return {steps:["Gips","Design/Sliping av CoCr"],lot:"Lotnr. CoCr"};
   if(/skinne/.test(n))return {steps:["Gips","Design","Skinneproduksjon"],lot:""};
   if(/rebasering/.test(n))return {steps:["Gips","Akrylering"],lot:""};
   if(/protese|\bho\b|\bhu\b|\bpo\b|\bpu\b|tannoppstilling/.test(n))return {steps:["Gips","Tannoppstilling","Akrylering"],lot:""};
@@ -533,6 +533,7 @@ function loadWorkSteps(){
   try{var r=ST_get(WSKEY);if(r){var pm=JSON.parse(r);if(pm&&typeof pm==="object")m=pm;}}catch(e){}
   var changed=false;
   catalog.forEach(function(t){ if(!Object.prototype.hasOwnProperty.call(m,t)){ m[t]=defaultStepsFor(t); changed=true; } });
+  Object.keys(m).forEach(function(t){ if(m[t]&&m[t].lot==="Lotnr. CoCr-pulver"){ m[t].lot="Lotnr. CoCr"; changed=true; } });
   if(changed)ST_set(WSKEY,JSON.stringify(m));
   return m;
 }
@@ -571,7 +572,7 @@ function stepsHtml(o){
   h+='<div style="display:flex;justify-content:space-between;align-items:baseline;border-bottom:2px solid #14243B;padding-bottom:8px;">'
     +'<div class="mono" style="font-size:13px;font-weight:700;letter-spacing:2px;color:#14243B;">ARBEIDSTRINN</div>'
     +'<div class="mono" style="font-size:12px;color:#14243B;">'+esc(o.id)+'</div></div>';
-  h+='<div class="mono" style="font-size:11px;color:'+MUTED+';padding:6px 0 2px;">'+esc(o.patientInitials||"?")+(o.patientNumber?' \u00b7 '+esc(o.patientNumber):'')+' \u00b7 Ferdig: '+(fa&&fa.asap?"Snarest":(fa&&fa.date?fmtDate(fa.date):"\u2013"))+'</div>';
+  h+='<div class="mono" style="font-size:11px;color:'+MUTED+';padding:6px 0 2px;">'+esc(o.patientInitials||"?")+(o.patientNumber?' \u00b7 '+esc(o.patientNumber):'')+' \u00b7 Ferdig: '+(fa&&fa.asap?"Snarest":(fa&&fa.date?weekdayNo(fa.date)+" "+fmtDate(fa.date):"\u2013"))+'</div>';
   h+='<div style="display:flex;align-items:flex-end;gap:12px;padding:8px 0 2px;"><div style="flex:1;"></div>'+cellHead(DW,"DATO")+cellHead(SW,"SIGN.")+'</div>';
   sp.steps.forEach(function(st){ h+=row(esc(st)); });
   for(var i=0;i<2;i++){ h+=row(ul(130)); }
@@ -592,6 +593,7 @@ function today(){return new Date().toISOString().slice(0,10);}
 function nowTime(){var d=new Date();return pad(d.getHours())+":"+pad(d.getMinutes());}
 function pad(n){return String(n).padStart(2,"0");}
 function fmtDate(iso){if(!iso)return"–";var p=iso.split("-");return p[2]+"."+p[1]+"."+p[0];}
+function weekdayNo(iso){if(!iso)return"";var d=new Date(iso+"T00:00:00");if(isNaN(d.getTime()))return"";return ["S\u00f8ndag","Mandag","Tirsdag","Onsdag","Torsdag","Fredag","L\u00f8rdag"][d.getDay()]||"";}
 function ageFromBirth(iso){if(!iso||!/^\d{4}-\d{2}-\d{2}$/.test(iso))return"";var b=new Date(iso);if(isNaN(b))return"";var n=new Date(),a=n.getFullYear()-b.getFullYear(),m=n.getMonth()-b.getMonth();if(m<0||(m===0&&n.getDate()<b.getDate()))a--;return a>=0&&a<130?String(a):"";}
 function finalAppt(o){var a=o.appointments||[];if(!a.length)return null;var m=a.filter(function(x){return x.final;})[0];if(m)return m;var s=a.filter(function(x){return x.date;}).sort(function(p,q){return p.date.localeCompare(q.date);});return s[0]||a[0];}
 // Automatic status: a work is "I arbeid" until its (Ferdigstilling) appointment date passes, then "Ferdig".
@@ -636,7 +638,7 @@ function printSlipPdf(o){
         scale:3, backgroundColor:"#ffffff", useCORS:true,
         onclone:function(d){
           var st=d.createElement("style");
-          st.textContent="#__slipfit .fdi-cell{width:21px!important;height:21px!important;min-width:21px!important;font-size:10px!important;border-radius:3px!important;}#__slipfit .fdi-sep{margin:0 2px!important;}";
+          st.textContent="#__slipfit .fdi-cell{flex:0 0 auto!important;width:21px!important;height:21px!important;min-width:21px!important;max-width:21px!important;font-size:10px!important;border-radius:3px!important;}#__slipfit .fdi-sep{margin:0 2px!important;}";
           d.head.appendChild(st);
         }
       });
@@ -1083,6 +1085,10 @@ function timeSelectHtml(value,idAttr,hStart,hEnd){
 // FDI
 function fdiGridHtml(teeth,readOnly){
   function cell(t){var on=teeth.indexOf(t)>=0;var cls="fdi-cell"+(on?" on":"")+(readOnly?" ro":"");return'<button class="'+cls+'" data-fdi="'+t+'" type="button">'+t+'</button>';}
+  if(readOnly){
+    function rrow(arr){return'<div style="display:flex;align-items:center;justify-content:center;width:100%;gap:1px;">'+arr.slice(0,8).map(cell).join('')+'<div class="fdi-sep"></div>'+arr.slice(8).map(cell).join('')+'</div>';}
+    return'<div style="display:flex;flex-direction:column;gap:3px;width:100%;">'+rrow(UPPER)+rrow(LOWER)+'</div>';
+  }
   function row(arr){return'<div style="display:flex;gap:2px;align-items:center;flex-wrap:nowrap;justify-content:center;width:100%;">'+arr.slice(0,8).map(cell).join('')+'<div class="fdi-sep"></div>'+arr.slice(8).map(cell).join('')+'</div>';}
   return'<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;"><div style="display:inline-flex;flex-direction:column;gap:4px;">'+row(UPPER)+row(LOWER)+'</div></div>';
 }
@@ -1101,7 +1107,7 @@ function slipHtml(o,screen,scale){
   h+='<div style="display:flex;padding:9px 0;border-bottom:1px solid #DCD8CC"><div class="mono" style="width:130px;font-size:11px;color:#666;letter-spacing:1px;padding-top:3px;text-transform:uppercase;flex-shrink:0;">ARBEID</div><div style="flex:1;">';
   if(o.works&&o.works.length)o.works.forEach(function(w){h+='<div style="font-size:17px;font-weight:600;margin-bottom:2px;">'+esc(buildWorkText(w)||"–")+'</div>';});
   else h+='<div style="font-size:17px;">–</div>';h+='</div></div>';
-  h+='<div style="padding:12px 0;border-bottom:1px solid #DCD8CC;"><div class="mono" style="font-size:11px;color:'+SIGNAL+';font-weight:600;letter-spacing:1px;">'+(fa&&fa.label?esc(fa.label).toUpperCase():"FERDIGSTILLING")+'</div><div class="mono" style="font-size:26px;font-weight:600;color:'+SIGNAL+';line-height:1.15;white-space:nowrap;">'+(fa&&fa.asap?"Snarest":((fa?fmtDate(fa.date):"–")+(fa&&fa.time?" kl. "+esc(fa.time):"")))+'</div>'+(!fa||(!fa.date&&!fa.asap)?'<div style="font-size:13px;font-weight:600;color:'+SIGNAL+';margin-top:6px;">&#9888; Dato ikke oppgitt &ndash; kontakt klinikken</div>':'')+'</div>';
+  var fdMain=(fa&&fa.asap)?"Snarest":((fa&&fa.date?weekdayNo(fa.date)+" "+fmtDate(fa.date):"")+(fa&&fa.time?" kl. "+esc(fa.time):""));if(!fdMain)fdMain="\u2013";var fdSize=Math.max(15,Math.min(30,Math.floor(365/(fdMain.length*0.62))));h+='<div style="padding:12px 0;border-bottom:1px solid #DCD8CC;"><div class="mono" style="font-size:11px;color:#666;font-weight:600;letter-spacing:1px;">'+(fa&&fa.label?esc(fa.label).toUpperCase():"FERDIGSTILLING")+'</div>'+'<div class="mono" style="font-size:'+fdSize+'px;font-weight:600;color:'+SIGNAL+';line-height:1.15;white-space:nowrap;margin-top:2px;">'+fdMain+'</div>'+(!fa||(!fa.date&&!fa.asap)?'<div style="font-size:13px;font-weight:600;color:'+SIGNAL+';margin-top:6px;">&#9888; Dato ikke oppgitt &ndash; kontakt klinikken</div>':'')+'</div>';
   h+='<div style="padding:10px 0;border-bottom:1px solid #DCD8CC;">';
   if(o.sentDate)h+=dline("Dato sendt",fmtDate(o.sentDate));
   h+=dline("Ank. lab",fmtDate(o.receivedDate)+(o.receivedTime?" kl. "+o.receivedTime:""));
@@ -1714,7 +1720,7 @@ function renderList(){
     var kl=orderKlaringer(o).length>0;
     var sBC=st==="Ferdig"?"#BFE6C6":"#FBDF6E";
     var sC=st==="Ferdig"?"#1B6B33":"#5E4A00";
-    return '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;"><div><span class="mono" style="font-size:12px;color:'+MUTED+';">'+esc(o.id)+'</span><div class="disp" style="font-weight:600;margin-top:2px;">'+(kl?"&#9888;&#65039; ":"")+esc(worksSummary(o))+'</div><div style="font-size:14px;color:'+MUTED+';margin-top:2px;">'+esc(o.dentist||"–")+(o.practice?" · "+esc(o.practice):"")+' · Pas. '+esc(o.patientInitials||"")+" "+esc(o.patientNumber||"")+'</div></div><div style="text-align:right;flex-shrink:0;"><div class="mono" style="font-size:18px;font-weight:600;color:'+"#1C2823"+';">'+(fa&&fa.asap?"Snarest":(fa?fmtDate(fa.date):"–"))+'</div><span class="badge" style="background:'+sBC+';color:'+sC+';margin-top:4px;display:block;">'+esc(st)+'</span>'+qdoneHtml(o)+'</div></div>';
+    return '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;"><div><span class="mono" style="font-size:12px;color:'+MUTED+';">'+esc(o.id)+(o.receivedDate?' \u00b7 '+fmtDate(o.receivedDate):'')+'</span><div class="disp" style="font-weight:600;margin-top:2px;">'+(kl?"&#9888;&#65039; ":"")+esc(worksSummary(o))+'</div><div style="font-size:14px;color:'+MUTED+';margin-top:2px;">'+esc(o.dentist||"–")+(o.practice?" · "+esc(o.practice):"")+' · Pas. '+esc(o.patientInitials||"")+" "+esc(o.patientNumber||"")+'</div></div><div style="text-align:right;flex-shrink:0;"><div class="mono" style="font-size:18px;font-weight:600;color:'+"#1C2823"+';">'+(fa&&fa.asap?"Snarest":(fa?fmtDate(fa.date):"–"))+'</div><span class="badge" style="background:'+sBC+';color:'+sC+';margin-top:4px;display:block;">'+esc(st)+'</span>'+qdoneHtml(o)+'</div></div>';
   }
   el.innerHTML=filtered.map(function(g){
     if(g.length===1){
@@ -2125,6 +2131,7 @@ function renderDagsorden(){
     var sBC=st==="Ferdig"?"#BFE6C6":"#FBDF6E", sC=st==="Ferdig"?"#1B6B33":"#5E4A00";
     return '<div style="display:flex;align-items:flex-start;gap:10px;padding:12px 14px;border:1px solid #E3E1D8;border-radius:12px;margin-bottom:8px;background:#fff;">'
       +'<button class="dagsorden-open" data-open="'+o.id+'" style="flex:1;text-align:left;background:none;border:none;cursor:pointer;padding:0;">'
+      +'<div class="mono" style="font-size:11px;color:'+MUTED+';margin-bottom:3px;">'+esc(o.id)+(o.receivedDate?' \u00b7 '+fmtDate(o.receivedDate):'')+'</div>'
       +'<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;"><div style="font-size:15px;font-weight:700;color:#1C2823;">'+esc(worksSummary(o))+'</div><span class="badge" style="background:'+sBC+';color:'+sC+';flex-shrink:0;">'+esc(st)+'</span></div>'
       +'<div style="font-size:13px;color:'+MUTED+';margin-top:2px;">'+who+'</div>'
       +'<div style="font-size:13px;color:'+MUTED+';">'+dent+'</div>'
@@ -2383,8 +2390,9 @@ function renderSettings(){
     +'<span style="opacity:.7;">\u2699\uFE0E &nbsp;API-nøkkel'+(_hasKey?" \u00b7 lagret":" \u00b7 ikke satt")+'</span>'
     +'<span style="margin-left:auto;color:'+GOLD+';">'+(_apiOpen?"\u25B2":"\u25BC")+'</span></button>';
   if(_apiOpen){
-    h+='<p style="font-size:13px;color:'+MUTED+';margin:6px 2px 8px;">Nødvendig for å lese av seddler. Lagres kun lokalt på denne enheten.</p>';
-    h+='<input class="inp" id="s-apikey" type="password" placeholder="'+(_hasKey?"•••••• (lagret)":"Lim inn API-nøkkel (sk-ant-...)")+'" style="margin-bottom:8px;width:100%;box-sizing:border-box;">';
+    h+='<p style="font-size:13px;color:'+MUTED+';margin:6px 2px 8px;">Nødvendig for å lese av seddler. Lagres kun lokalt på denne enheten. Nøkkelen vises nå i sin helhet, og autokorrektur er slått av – kontroller den mot Anthropic-konsollen.</p>';
+    h+='<textarea class="inp" id="s-apikey" rows="3" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" placeholder="Lim inn eller skriv API-nøkkelen (sk-ant-api03-...)" style="margin-bottom:6px;width:100%;box-sizing:border-box;font-family:\'IBM Plex Mono\',monospace;font-size:14px;line-height:1.6;letter-spacing:.5px;word-break:break-all;resize:vertical;min-height:78px;">'+esc(ST_get(AKEY)||"")+'</textarea>';
+    h+='<div id="s-keyinfo" style="font-size:12px;color:'+MUTED+';margin-bottom:8px;line-height:1.5;"></div>';
     h+='<div style="display:flex;gap:8px;margin-bottom:8px;"><button class="btn btn-teal" id="s-savekey" style="flex:1;padding:10px 0;font-size:14px;">Lagre nøkkel</button>'+(_hasKey?'<button class="btn btn-ghost" id="s-clearkey" style="flex:1;padding:10px 0;font-size:14px;">Fjern</button>':"")+'</div>';
   }
   document.getElementById("settings-page").innerHTML=h;
@@ -2396,6 +2404,8 @@ function renderSettings(){
   var _mo=document.getElementById("mdl-opus"); if(_mo)_mo.onclick=function(){saveModel(MODEL_OPUS);renderSettings();};
   var _sk=document.getElementById("s-savekey");if(_sk)_sk.onclick=function(){var raw0=(document.getElementById("s-apikey").value||"");var v=cleanApiKey(raw0);var removed=raw0.trim().length-v.length;if(v){ST_set(AKEY,v);API_KEY=v;var msg="API-nøkkel lagret."+(removed>0?" ("+removed+" usynlige/ugyldige tegn ble fjernet)":"");if(!/^sk-ant-api/.test(v)||v.length<80){msg+="\n\n⚠ Nøkkelen ser ødelagt ut ("+v.length+" tegn"+(!/^sk-ant-api/.test(v)?", mangler sk-ant-api-prefikset":"")+"). Ikke kopier fra e-post/notat: åpne console.anthropic.com i Safari på DENNE iPaden, lag en ny nøkkel og bruk kopiknappen.";}alert(msg);renderSettings();}else{alert("Lim inn en gyldig nøkkel først.");}};
   var _ck=document.getElementById("s-clearkey");if(_ck)_ck.onclick=function(){confirm2("Fjerne lagret API-nøkkel?","Fjern",function(){ST_del(AKEY);API_KEY="";renderSettings();});};
+  var _ki=document.getElementById("s-apikey"),_kinf=document.getElementById("s-keyinfo");
+  if(_ki&&_kinf){var _kf=function(){var v=cleanApiKey(_ki.value);var rawlen=(_ki.value||"").replace(/\s/g,"").length;var removed=rawlen-v.length;var okP=/^sk-ant-api/.test(v);var okL=v.length>=90&&v.length<=200;_kinf.innerHTML="Rene tegn: <b>"+v.length+"</b>"+(removed>0?' · <span style="color:'+SIGNAL+';font-weight:600;">'+removed+' tegn fjernes ved lagring</span>':'')+' · '+(okP?'prefiks ✓':'<span style="color:'+SIGNAL+';">prefiks mangler</span>')+' · '+(okL?'lengde ✓':'<span style="color:'+SIGNAL+';">uvanlig lengde</span>');};_ki.oninput=_kf;_kf();}
   var ni=document.getElementById("s-newtmpl"),pr=document.getElementById("s-preview");
   if(ni){
     ni.oninput=function(){var v=ni.value.trim();if(v){pr.textContent="Forhåndsvisning: "+v.replace(/\{x\}/g,"14, 21").replace(/\{y\}/g,"okj");pr.style.display="block";}else pr.style.display="none";};
