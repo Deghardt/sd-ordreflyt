@@ -155,7 +155,8 @@ textarea.inp{resize:vertical;}
         <button id="btn-export" class="btn-sm" style="background:#fff;color:#0E2342;border:1px solid #0E2342;">&#8595; Eksporter (JSON)</button><button id="btn-archive" class="btn-sm" style="background:#fff;color:#0E2342;border:1px solid #0E2342;">&#128451;&#65038; Arkiver m&aring;ned</button><button id="btn-learnlog" class="btn-sm" style="background:#fff;color:#9A6A14;border:1px solid #9A6A14;">&#9881; L&aelig;ringslogg</button>
         <label class="btn-sm" style="background:#fff;color:#6B746E;border:1px solid #DCD8CC;cursor:pointer;">&#8593; Importer backup<input type="file" accept=".json,application/json,text/plain,text/json" id="import-input" style="display:none;"></label>
       </div>
-      <div id="storage-meter" style="font-size:12px;color:#6B746E;margin:-4px 0 12px 2px;"></div>
+      <div id="storage-meter" style="font-size:12px;color:#6B746E;margin:-4px 0 2px 2px;"></div>
+      <div id="api-meter" style="font-size:12px;color:#6B746E;margin:0 0 12px 2px;"></div>
       <input class="inp" id="search-inp" placeholder="Søk: tannlege, pasientnr., arbeid ..." style="margin-bottom:16px;">
       <div id="backup-reminder" style="display:none;"></div>
       <div id="status-filter" style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:14px;"></div>
@@ -227,7 +228,7 @@ var Y_OPT=["okj","ukj","okj+ukj"];
 var STATUSES=["I arbeid","Ferdig"];
 var _listStatusFilter="Alle"; // list status filter: Alle | Ny | I arbeid | Ferdig
 var _dagsordenWeek=0; // 0=aktuelle Kalenderwoche, negativ=Vergangenheit, positiv=Zukunft
-var OKEY="sd-orders-v2",CKEY="sd-catalog-v1",LLKEY="sd-learnlog-exported-v1",BKEY="sd-lastbackup-v1",AKEY="sd-apikey-v1",DKEY="sd-dentists-v1",NKEY="sd-customer-notes-v1",PWKEY="sd-kunder-pw-v1",CRULESKEY="sd-customer-rules-v1",MKEY="sd-model-v1",ARCHKEY="sd-archived-months-v1",WSKEY="sd-worksteps-v1";
+var OKEY="sd-orders-v2",CKEY="sd-catalog-v1",LLKEY="sd-learnlog-exported-v1",BKEY="sd-lastbackup-v1",AKEY="sd-apikey-v1",DKEY="sd-dentists-v1",NKEY="sd-customer-notes-v1",PWKEY="sd-kunder-pw-v1",CRULESKEY="sd-customer-rules-v1",MKEY="sd-model-v1",ARCHKEY="sd-archived-months-v1",WSKEY="sd-worksteps-v1",APICOSTKEY="sd-apicost-v1";
 var MODEL_SONNET="claude-sonnet-4-6",MODEL_OPUS="claude-opus-4-8";
 var UPPER=["18","17","16","15","14","13","12","11","21","22","23","24","25","26","27","28"];
 var LOWER=["48","47","46","45","44","43","42","41","31","32","33","34","35","36","37","38"];
@@ -1001,6 +1002,7 @@ async function callApi(content,attempt){
   var data=null;try{data=JSON.parse(raw);}catch(e){data=parseSse(raw);}
   if(!data){if(attempt<MAXTRY){await sleep(backoff);return callApi(content,attempt+1);}throw new Error("uventet svarformat – prøv igjen");}
   if(data.type==="error"||data.error)throw new Error((data.error&&data.error.message)||"API-feil HTTP "+res.status);
+  if(data&&data.usage){try{recordUsage(data.usage,loadModel());}catch(_e){}}
   return data;
 }
 async function extractFromImages(images){
@@ -1029,7 +1031,30 @@ function showScreen(name){
   window.scrollTo(0,0);
 }
 function setError(msg){var el=document.getElementById("err-bar");if(msg){el.textContent=msg;el.style.display="block";}else el.style.display="none";}
-function updateNavCount(){var nb=document.getElementById("nav-list");if(nb)nb.textContent="Ordrer ("+orders.length+")";if(typeof updateStorageMeter==="function")updateStorageMeter();}
+// ---- API cost estimate (USD). Prices are ESTIMATES per 1M tokens; adjust if Anthropic changes them. ----
+var API_PRICE={}; API_PRICE[MODEL_SONNET]={in:3,out:15}; API_PRICE[MODEL_OPUS]={in:15,out:75};
+function ymNow(){return new Date().toISOString().slice(0,7);}
+function recordUsage(u,model){
+  if(!u)return;
+  var it=u.input_tokens||0, ot=u.output_tokens||0; if(!it&&!ot)return;
+  var pr=API_PRICE[model]||API_PRICE[MODEL_SONNET];
+  var usd=it/1e6*pr.in + ot/1e6*pr.out;
+  var m={}; try{var r=ST_get(APICOSTKEY); if(r)m=JSON.parse(r)||{};}catch(e){}
+  var ym=ymNow(); var e=m[ym]||{calls:0,in:0,out:0,usd:0};
+  e.calls++; e.in+=it; e.out+=ot; e.usd+=usd; m[ym]=e;
+  ST_set(APICOSTKEY,JSON.stringify(m));
+}
+function apiCostThisMonth(){try{var m=JSON.parse(ST_get(APICOSTKEY)||"{}");return m[ymNow()]||{calls:0,in:0,out:0,usd:0};}catch(e){return {calls:0,in:0,out:0,usd:0};}}
+function updateApiMeter(){var el=document.getElementById("api-meter");if(!el)return;var e=apiCostThisMonth();el.textContent="API denne m\u00e5neden: ~"+e.usd.toFixed(2).replace(".",",")+" USD \u00b7 "+e.calls+" avlesninger";}
+// ---- Quick "mark as done" for orders that can never auto-complete (Snarest / no date) ----
+function isUndatedOrAsap(o){var fa=finalAppt(o);return !fa||fa.asap||!fa.date;}
+function toggleQuickDone(id){var o=orders.filter(function(x){return x.id===id;})[0];if(!o)return;o.status=(orderStatus(o)==="Ferdig")?"I arbeid":"Ferdig";saveOrders();updateNavCount();}
+function qdoneHtml(o){
+  if(!isUndatedOrAsap(o))return "";
+  var done=orderStatus(o)==="Ferdig";
+  return '<span class="qdone" data-done="'+esc(o.id)+'" role="button" style="display:inline-block;margin-top:8px;font-size:12px;font-weight:600;padding:5px 11px;border-radius:8px;cursor:pointer;white-space:nowrap;border:1px solid '+(done?"#1B6B33":"#C7B15A")+';background:'+(done?"#BFE6C6":"#fff")+';color:'+(done?"#1B6B33":"#6B5A16")+';">'+(done?"\u2611 Ferdig":"\u2610 Merk ferdig")+'</span>';
+}
+function updateNavCount(){var nb=document.getElementById("nav-list");if(nb)nb.textContent="Ordrer ("+orders.length+")";if(typeof updateStorageMeter==="function")updateStorageMeter();if(typeof updateApiMeter==="function")updateApiMeter();}
 function confirm2(msg,okLabel,onOk){
   document.getElementById("confirm-msg").textContent=msg;
   document.getElementById("confirm-ok").textContent=okLabel||"Ja";
@@ -1689,7 +1714,7 @@ function renderList(){
     var kl=orderKlaringer(o).length>0;
     var sBC=st==="Ferdig"?"#BFE6C6":"#FBDF6E";
     var sC=st==="Ferdig"?"#1B6B33":"#5E4A00";
-    return '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;"><div><span class="mono" style="font-size:12px;color:'+MUTED+';">'+esc(o.id)+'</span><div class="disp" style="font-weight:600;margin-top:2px;">'+(kl?"&#9888;&#65039; ":"")+esc(worksSummary(o))+'</div><div style="font-size:14px;color:'+MUTED+';margin-top:2px;">'+esc(o.dentist||"–")+(o.practice?" · "+esc(o.practice):"")+' · Pas. '+esc(o.patientInitials||"")+" "+esc(o.patientNumber||"")+'</div></div><div style="text-align:right;flex-shrink:0;"><div class="mono" style="font-size:18px;font-weight:600;color:'+"#1C2823"+';">'+(fa&&fa.asap?"Snarest":(fa?fmtDate(fa.date):"–"))+'</div><span class="badge" style="background:'+sBC+';color:'+sC+';margin-top:4px;display:block;">'+esc(st)+'</span></div></div>';
+    return '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;"><div><span class="mono" style="font-size:12px;color:'+MUTED+';">'+esc(o.id)+'</span><div class="disp" style="font-weight:600;margin-top:2px;">'+(kl?"&#9888;&#65039; ":"")+esc(worksSummary(o))+'</div><div style="font-size:14px;color:'+MUTED+';margin-top:2px;">'+esc(o.dentist||"–")+(o.practice?" · "+esc(o.practice):"")+' · Pas. '+esc(o.patientInitials||"")+" "+esc(o.patientNumber||"")+'</div></div><div style="text-align:right;flex-shrink:0;"><div class="mono" style="font-size:18px;font-weight:600;color:'+"#1C2823"+';">'+(fa&&fa.asap?"Snarest":(fa?fmtDate(fa.date):"–"))+'</div><span class="badge" style="background:'+sBC+';color:'+sC+';margin-top:4px;display:block;">'+esc(st)+'</span>'+qdoneHtml(o)+'</div></div>';
   }
   el.innerHTML=filtered.map(function(g){
     if(g.length===1){
@@ -1720,6 +1745,7 @@ function renderList(){
     b.onclick=function(){var id=b.getAttribute("data-case");expandedCases[id]=!expandedCases[id];renderList();};
   });
   el.querySelectorAll("[data-ord]").forEach(function(b){b.onclick=function(){var o=orders.filter(function(x){return x.id===b.getAttribute("data-ord");})[0];if(o){detailOrder=o;renderDetail();showScreen("detail");}};});
+  el.querySelectorAll("[data-done]").forEach(function(b){b.onclick=function(e){e.stopPropagation();toggleQuickDone(b.getAttribute("data-done"));renderList();};});
 }
 
 // Render Detail
@@ -2103,7 +2129,7 @@ function renderDagsorden(){
       +'<div style="font-size:13px;color:'+MUTED+';margin-top:2px;">'+who+'</div>'
       +'<div style="font-size:13px;color:'+MUTED+';">'+dent+'</div>'
       +(fa&&fa.asap?'<div class="mono" style="font-size:14px;font-weight:600;color:'+SIGNAL+';margin-top:4px;">Snarest</div>':(fa&&fa.time?'<div class="mono" style="font-size:14px;font-weight:600;color:'+TEAL+';margin-top:4px;">kl. '+esc(fa.time)+'</div>':''))
-      +'</button></div>';
+      +'</button>'+qdoneHtml(o)+'</div>';
   }
   var wkNo=isoWeek(wr.mon);
   var rel=_dagsordenWeek===0?" \u00b7 denne uken":(_dagsordenWeek===1?" \u00b7 neste uke":(_dagsordenWeek===-1?" \u00b7 forrige uke":""));
@@ -2140,6 +2166,7 @@ function renderDagsorden(){
   var _nx=document.getElementById("dg-next"); if(_nx)_nx.onclick=function(){_dagsordenWeek++;renderDagsorden();};
   var _td=document.getElementById("dg-today"); if(_td)_td.onclick=function(){_dagsordenWeek=0;renderDagsorden();};
   var _pr=document.getElementById("dg-print"); if(_pr)_pr.onclick=function(){printWeekList(_dagsordenWeek);};
+  box.querySelectorAll("[data-done]").forEach(function(b){b.onclick=function(e){e.stopPropagation();toggleQuickDone(b.getAttribute("data-done"));renderDagsorden();};});
   box.querySelectorAll("[data-open]").forEach(function(b){
     b.onclick=function(){var id=b.getAttribute("data-open");var o=orders.filter(function(x){return x.id===id;})[0];if(o){detailOrder=o;renderDetail();showScreen("detail");}};
   });
