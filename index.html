@@ -645,9 +645,10 @@ function printSlipPdf(o){
     var fontsReady=(document.fonts&&document.fonts.ready)?document.fonts.ready:Promise.resolve();
     return fontsReady.then(function(){return new Promise(function(r){setTimeout(r,80);});}).then(function(){
       var sf=document.getElementById("__slipfit");
-      // Keep the slip WIDTH constant: if the rotated length would exceed the page, shrink the CONTENT (font), not the frame.
-      var maxLenMM=204, frameWmm=136, cs=1, tr=0;
-      while((frameWmm*(sf.scrollHeight/430))>maxLenMM && tr<4){ cs=cs*(maxLenMM/(frameWmm*(sf.scrollHeight/430)))*0.97; sf.innerHTML=slipHtml(o,false,cs); tr++; }
+      // Keep the slip WIDTH constant and everything else at full size: if the rotated length would exceed the page, shrink ONLY the Merknader text.
+      var maxLenMM=204, frameWmm=136;
+      var merk=sf.querySelector(".slip-merk"), fsz=15;
+      while(merk && (frameWmm*(sf.scrollHeight/430))>maxLenMM && fsz>7.5){ fsz-=0.5; merk.style.fontSize=fsz.toFixed(1)+"px"; }
       return html2canvas(sf,{
         scale:3, backgroundColor:"#ffffff", useCORS:true,
         onclone:function(d){
@@ -1129,7 +1130,7 @@ function slipHtml(o,screen,scale){
   others.forEach(function(a){h+=dline(a.label||"Prøve",fmtDate(a.date)+(a.time?" kl. "+a.time:""));});h+='</div>';
   h+=srow("Underlag",o.kind==="scan"?"Scan":"Avtrykk");
   if(o.kind==="avtrykk")h+=srow("Antall mottatt",antallLine(o));
-  h+=srow("Merknader",o.remarks);
+  h+='<div style="display:flex;padding:9px 0;border-bottom:1px solid #DCD8CC"><div class="mono" style="width:130px;font-size:11px;color:#666;letter-spacing:1px;padding-top:3px;text-transform:uppercase;flex-shrink:0;">Merknader</div><div class="slip-merk" style="font-size:'+fz(15)+';flex:1;">'+esc(o.remarks||'–')+'</div></div>';
   h+=srow("Farge",o.shade,true,true,!needsFdi(o));
   if(needsFdi(o))h+='<div style="padding:12px 0;border-top:none;"><div class="mono" style="font-size:11px;color:#666;letter-spacing:1px;margin-bottom:8px;">FDI</div>'+fdiGridHtml(o.teeth||[],true)+'</div>';
   h+='</div>';return h;
@@ -2240,7 +2241,7 @@ function renderDetail(){
         box.style.transform="none";
         var fW=maxVpx/boxWpx;
         var natH=fit.scrollHeight;
-        if(id==="slip-fit"){ var cs=1,tr=0; while(natH*fW*0.99>maxHpx && tr<4){ cs=cs*(maxHpx/(natH*fW*0.99))*0.97; fit.innerHTML=slipHtml(o,false,cs); natH=fit.scrollHeight; tr++; } }
+        if(id==="slip-fit"){ var merk=fit.querySelector(".slip-merk"), fsz=15; while(merk && natH*fW*0.99>maxHpx && fsz>7.5){ fsz-=0.5; merk.style.fontSize=fsz.toFixed(1)+"px"; natH=fit.scrollHeight; } }
         var f=(natH*fW<=maxHpx?fW:maxHpx/natH)*0.99;
         box.style.transform="rotate(90deg) scale("+f.toFixed(3)+")";
       });
