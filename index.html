@@ -787,6 +787,25 @@ function nextAppt(o){var a=o.appointments||[];
   var d=a.filter(function(x){return x.date&&!x.asap&&x.date>=today();}).sort(function(p,q){return p.date.localeCompare(q.date)||(p.time||"").localeCompare(q.time||"");});
   if(d.length)return d[0];return a.filter(function(x){return !x.date&&!x.asap;})[0]||null;}
 function isStaged(o){return (o.appointments||[]).length>1;}
+// Protesetrinn i riktig rekkefølge; ved Vitallium er bittvoll og skjelettprøve ett trinn («Skjelettprøve m/ bittvoll»).
+var STAGE_ORDER=["Ind. avtrykkskje","Bittvoll","Skjelettprøve m/ bittvoll","Tannoppstilling","Ferdigstilling"];
+function normStageAppts(works,appts){
+  if(!Array.isArray(appts))return false;
+  var prot=(works||[]).filter(function(w){return w&&!w.free&&w.template&&PRODMETA[w.template]&&PRODMETA[w.template].kat==="protese"&&PRODMETA[w.template].rolle!=="trinn";});
+  if(!prot.length)return false;
+  var vit=prot.some(function(w){return /vitallium/i.test((PRODMETA[w.template].valg||[])[0]||"");});
+  var from=vit?"Bittvoll":"Skjelettprøve m/ bittvoll",to=vit?"Skjelettprøve m/ bittvoll":"Bittvoll",changed=false;
+  var hasTo=appts.some(function(a){return a.label===to;});
+  for(var i=appts.length-1;i>=0;i--){var a=appts[i];if(a.label!==from)continue;
+    if(!hasTo){a.label=to;hasTo=true;changed=true;}
+    else if(!a.final&&!a.date){appts.splice(i,1);changed=true;}}
+  // rekkefølge: hovedtermin først, deretter andre prøver, så protesetrinnene i fast rekkefølge (Ferdigstilling sist)
+  var keyed=appts.map(function(a,i){var si=STAGE_ORDER.indexOf(a.label);return {a:a,k:a.final?-1:(si<0?0:1+si),i:i};});
+  keyed.sort(function(p,q){return p.k-q.k||p.i-q.i;});
+  keyed.forEach(function(x,j){if(appts[j]!==x.a)changed=true;});
+  if(changed){var sorted=keyed.map(function(x){return x.a;});appts.length=0;sorted.forEach(function(a){appts.push(a);});}
+  return changed;
+}
 // ---- Pakke 4b: neste trinn føres rett inn i appen (ingen ny utskrift) ----
 // mode "card": bare neste trinn uten dato (Dagsorden). mode "detail": alle senere trinn/prøver (ordrevisning).
 function stagePanelHtml(o,mode){
@@ -1551,9 +1570,13 @@ function rvProtWrite(st){
   // datofelt for de neste trinnene (tomme = fylles inn senere / linje på seddelen)
   var stages=rvTmpls("protese","trinn").filter(function(t){return isVit?t!=="Bittvoll {y}":t!=="Skjelettprøve m/ bittvoll {y}";});
   var labels=stages.map(function(t){return metaOf(t).valg[0];});
+  var allLabels=rvTmpls("protese","trinn").map(function(t){return metaOf(t).valg[0];});
   var idx=stages.indexOf(trinnT),later=idx>=0?labels.slice(idx+1):[];
-  form.appointments=form.appointments.filter(function(a){return a.final||labels.indexOf(a.label)<0||later.indexOf(a.label)>=0;});
+  // Bittvoll <-> Skjelettprøve m/ bittvoll byttes (dato følger med) når typen endres til/fra Vitallium
+  normStageAppts(form.works,form.appointments);
+  form.appointments=form.appointments.filter(function(a){return a.final||allLabels.indexOf(a.label)<0||later.indexOf(a.label)>=0;});
   later.forEach(function(l){if(!form.appointments.some(function(a){return a.label===l&&!a.final;}))form.appointments.push({date:"",time:"",label:l,final:false});});
+  normStageAppts(form.works,form.appointments);
   // terminen øverst gjelder trinnet som bestilles nå – etiketten på seddelen skal si hvilket
   var fa=form.appointments[rvFinal()];if(fa)fa.label=idx>=0?labels[idx]:"Ferdigstilling";
 }
@@ -3084,7 +3107,10 @@ function buildLearningLog(includeAll){
 }
 
 // Init
-orders=loadOrders();catalog=loadCatalog();WORKSTEPS=loadWorkSteps();migrateCatalogV2();updateNavCount();
+orders=loadOrders();catalog=loadCatalog();WORKSTEPS=loadWorkSteps();migrateCatalogV2();
+// Retter allerede lagrede ordrer: Vitallium-«Bittvoll» → «Skjelettprøve m/ bittvoll», trinnene i riktig rekkefølge
+(function(){var ch=false;orders.forEach(function(o){if(o.status!=="Ferdig"&&normStageAppts(o.works,o.appointments))ch=true;});if(ch)saveOrders();})();
+updateNavCount();
 migrateImagesToIdb();
 document.querySelectorAll(".nav-btn").forEach(function(b){b.onclick=function(){var n=b.getAttribute("data-nav");setError("");if(n==="list")renderList();if(n==="dagsorden")renderDagsorden();showScreen(n);};});
 document.getElementById("btn-settings").onclick=function(){setError("");renderSettings();showScreen("settings");};
