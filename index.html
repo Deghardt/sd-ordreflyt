@@ -1633,13 +1633,39 @@ function rvRepWrite(st){
   form.works=others.concat(list);
 }
 // ---------- status per punkt ----------
+// Hva mangler før punktet kan bekreftes? Konkrete tekster, vises sammen med «Bekreft».
+function rvWorkName(w){var k=rvKatOfWork(w),kk=k?katById(k):null;if(w.template)return w.template.replace(/\s*\{[xy]\}/g,"").replace(/\s+/g," ").trim();return kk?kk.navn:"Arbeid";}
+function rvMissing(k){
+  var f=form,m=[];
+  if(k==="kunde"&&!(f.dentist||f.practice))m.push("Tannlege eller klinikk er ikke valgt");
+  if(k==="mottatt"&&f.kind!=="scan"&&(f.antallAvtrykk===""||f.antallAvtrykk==null))m.push("Antall avtrykk er ikke talt – velg et tall");
+  if(k==="termin"){var a=f.appointments[rvFinal()];if(!(a&&(a.asap||a.date)))m.push("Dato for terminen mangler – velg dato eller «Snarest»");}
+  if(k==="arbeid"){
+    if(!f.works.length)m.push("Ingen arbeid registrert – trykk «+ Legg til arbeid»");
+    f.works.forEach(function(w,i){if(rvWorkValid(w))return;var n=rvWorkName(w),kat=rvKatOfWork(w);
+      if(w.free||w.template===FREE_LABEL){m.push("Fritekst: beskrivelsen mangler");return;}
+      if(!kat){m.push("Arbeid "+(i+1)+": hovedkategori er ikke valgt");return;}
+      if(!w.template){
+        if(kat==="protese"){m.push("Protese: protesetype er ikke valgt");return;}
+        var dims=katById(kat).dims||[],cur=w._valg||[],d=0;while(d<dims.length-1&&cur[d])d++;
+        m.push(n+": "+(dims[d]||"type").toLowerCase()+" er ikke valgt");return;}
+      if(tmplNeedsY(w.template)&&!w.y)m.push((kat==="protese"?"Protese":n)+": kjeve er ikke valgt"); // protese og trinn deler kjeve
+      if(tmplNeedsX(w.template)&&!(w.x||"").trim()){var mt=metaOf(w.template);
+        m.push(n+": "+(mt.kat==="protese"&&mt.rolle==="tillegg"?"patrise på tann er ikke fylt inn":"tann/tenner er ikke fylt inn"));}
+    });}
+  if(k==="detaljer"){var fn=rvFargeNeeded(),dn=needsFdi(f);
+    if(fn&&!(f.shade||"").trim())m.push("Farge mangler");
+    if(dn&&!(f.teeth||[]).length)m.push("Ingen tenner markert i FDI-skjemaet");
+    if(f.merk==null&&!(f.remarks||"").trim())m.push("Merknad: velg «SE VEDLEGG» eller «--»");}
+  return m.filter(function(x,i){return m.indexOf(x)===i;});
+}
 function rvCheck(k){
   var f=form,r={ok:true,warn:""};
   if(k==="kunde"){r.ok=!!(f.dentist||f.practice);if(f.dentist&&!DENTISTS.some(function(d){return d.full===f.dentist;}))r.warn="Ikke i tannlegeregisteret";if(!r.ok)r.warn="Velg tannlege eller klinikk";}
   if(k==="pasient"){if(!f.patientInitials&&!f.patientNumber)r.warn="Ingen initialer eller pasientnr.";}
   if(k==="mottatt"){r.ok=f.kind==="scan"||(f.antallAvtrykk!==""&&f.antallAvtrykk!=null);if(!r.ok)r.warn="Antall ikke talt";}
   if(k==="termin"){var a=f.appointments[rvFinal()];r.ok=!!(a&&(a.asap||a.date));if(!r.ok)r.warn="Ingen dato";else{var yw=rvYear();if(yw)r.warn=yw.far?"Årstall?":"Ukedag?";}}
-  if(k==="arbeid"){r.ok=f.works.length>0&&f.works.every(rvWorkValid);if(!r.ok)r.warn=f.works.length?"Ufullstendig":"Ingen arbeid";}
+  if(k==="arbeid"){r.ok=f.works.length>0&&f.works.every(rvWorkValid);if(!r.ok){var mm=rvMissing("arbeid");r.warn=mm.length?"Mangler: "+mm[0]+(mm.length>1?" (+"+(mm.length-1)+")":""):"Ingen arbeid";}}
   if(k==="detaljer"){var fn=rvFargeNeeded(),dn=needsFdi(f);
     if(fn&&!(f.shade||"").trim()){r.ok=false;r.warn="Farge mangler";}
     else if(dn&&!(f.teeth||[]).length){r.ok=false;r.warn="Tenner mangler";}
@@ -1716,7 +1742,8 @@ function rvStepHtml(k,i){
     +'<span class="mono" style="flex:0 0 150px;font-size:12px;letter-spacing:1.2px;color:'+MUTED+';">'+RV_LABEL[k]+'</span>'
     +'<span style="flex:1;min-width:0;font-family:Sora,sans-serif;font-size:15px;font-weight:600;color:'+(yr?SIGNAL:(k==="detaljer"&&form.merk==="vedlegg"?SIGNAL:NAVY))+';white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+esc(rvValue(k))+'</span>'
     +'<span class="mono" style="flex:0 0 auto;font-size:12px;color:'+sc+';">'+esc(status)+'</span></button>';
-  if(act)h+='<div style="padding:0 14px 14px 56px;">'+rvBody(k)+'<div style="display:flex;justify-content:flex-end;margin-top:6px;"><button type="button" '+(chk.ok?'data-act="ok:'+k+'"':'disabled')+' style="height:52px;min-width:180px;padding:0 22px;border-radius:12px;font-size:16px;font-weight:700;border:0;'+(chk.ok?'background:'+NAVY+';color:#fff;cursor:pointer;':'background:#E6E1D4;color:#8A857B;cursor:not-allowed;')+'">'+(chk.ok?(chk.warn?"✓ Bekreft likevel":"✓ Bekreft"):esc(chk.warn||"Mangler"))+'</button></div></div>';
+  var _mi=act&&!chk.ok?rvMissing(k):[];
+  if(act)h+='<div style="padding:0 14px 14px 56px;">'+rvBody(k)+(_mi.length?'<div style="background:#FBF4DD;border:1px solid '+GOLD+';border-radius:10px;padding:10px 14px;margin-top:8px;"><div style="font-size:13px;font-weight:700;color:#6B5216;margin-bottom:4px;">Mangler før du kan bekrefte:</div>'+_mi.map(function(x){return '<div style="font-size:14px;color:#6B5216;line-height:1.5;">• '+esc(x)+'</div>';}).join("")+'</div>':'')+'<div style="display:flex;justify-content:flex-end;margin-top:6px;"><button type="button" '+(chk.ok?'data-act="ok:'+k+'"':'disabled')+' style="height:52px;min-width:180px;padding:0 22px;border-radius:12px;font-size:16px;font-weight:700;border:0;'+(chk.ok?'background:'+NAVY+';color:#fff;cursor:pointer;':'background:#E6E1D4;color:#8A857B;cursor:not-allowed;')+'">'+(chk.ok?(chk.warn?"✓ Bekreft likevel":"✓ Bekreft"):(_mi.length?"Bekreft – "+_mi.length+" mangler":esc(chk.warn||"Mangler")))+'</button></div></div>';
   return h+'</div>';
 }
 function rvBody(k){
@@ -1829,11 +1856,11 @@ function rvWorkCard(wi){
       RV.opt[wi][d]=opts;
       if(!opts.length)break;
       if(opts.length===1&&opts[0]==="–")continue;
-      h+=rvSub(d+1>1&&dims.length>2?(d+1)+" · "+dims[d]:dims[d])+rvRow(opts.map(function(v,oi){return rvChip(v==="–"?"Standard":v,cur[d]===v,"w-dim:"+wi+":"+d+":"+oi);}).join(""));
+      h+=rvSub(d+1>1&&dims.length>2?(d+1)+" · "+dims[d]:dims[d])+rvRow(opts.map(function(v,oi){return rvChip(v==="–"?"Standard":v,cur[d]===v,"w-dim:"+wi+":"+d+":"+oi);}).join("")+(!cur[d]&&!w.template?'<span style="font-size:13px;font-weight:600;color:'+AMBER+';">← Må velges</span>':""));
     }
     if(w.template&&!metaOf(w.template).skjult){
-      if(tmplNeedsY(w.template)){var en=metaOf(w.template).enKjeve;h+=rvSub("Kjeve")+rvRow([["okj","OKJ"],["ukj","UKJ"],["okj+ukj","Begge"]].map(function(j){return rvChip(j[1],w.y===j[0],"w-jaw:"+wi+":"+j[0],{dis:en&&j[0]==="okj+ukj"});}).join("")+(en?'<span style="font-size:13px;color:'+AMBER+';">Bittskinne: alltid én kjeve.</span>':''));}
-      if(tmplNeedsX(w.template))h+=rvSub("Tann / tenner")+rvRow('<input data-wx="'+wi+'" value="'+esc(w.x)+'" placeholder="f.eks. 36 eller 24-26" style="width:200px;height:44px;border:1px solid #D6CFBE;border-radius:8px;padding:0 10px;font-size:16px;" class="mono"><span style="font-size:12px;color:'+MUTED+';">eller marker i FDI-skjemaet (punkt 6)</span>');
+      if(tmplNeedsY(w.template)){var en=metaOf(w.template).enKjeve;h+=rvSub("Kjeve")+rvRow([["okj","OKJ"],["ukj","UKJ"],["okj+ukj","Begge"]].map(function(j){return rvChip(j[1],w.y===j[0],"w-jaw:"+wi+":"+j[0],{dis:en&&j[0]==="okj+ukj"});}).join("")+(!w.y?'<span style="font-size:13px;font-weight:600;color:'+AMBER+';">← Må velges</span>':"")+(en?'<span style="font-size:13px;color:'+AMBER+';">Bittskinne: alltid én kjeve.</span>':''));}
+      if(tmplNeedsX(w.template))h+=rvSub("Tann / tenner")+rvRow('<input data-wx="'+wi+'" value="'+esc(w.x)+'" placeholder="f.eks. 36 eller 24-26" style="width:200px;height:44px;border:'+((w.x||"").trim()?'1px solid #D6CFBE':'2px solid '+GOLD)+';border-radius:8px;padding:0 10px;font-size:16px;" class="mono"><span style="font-size:12px;color:'+MUTED+';">eller marker i FDI-skjemaet (punkt 6)</span>');
       if(kat==="bro"&&catalog.indexOf("Skjelettprøve {x}")>=0){
         var sk=rvSkjFor(w);h+=rvSub("Skjelettprøve")+rvRow(rvChip("Nei",!sk,"w-skj:"+wi+":0")+rvChip("Ja",!!sk,"w-skj:"+wi+":1"));
         if(sk){var aj=-1;form.appointments.forEach(function(a,j){if(a.label==="Skjelettprøve"&&aj<0)aj=j;});
@@ -1849,11 +1876,11 @@ function rvProtCard(){
   h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;"><span class="disp" style="font-size:15px;font-weight:600;color:'+TEAL+';">Protese</span><button type="button" data-act="p-del" style="color:'+SIGNAL+';font-size:13px;cursor:pointer;">✕ Fjern</button></div>';
   if(st.legacy.length)h+='<div style="font-size:13px;color:'+AMBER+';margin-bottom:8px;">Gammel mal: «'+esc(st.legacy.join(" + "))+'» – velg type for å erstatte.</div>';
   var types=[];rvTmpls("protese","").forEach(function(t){var v=metaOf(t).valg[0];if(types.indexOf(v)<0)types.push(v);});
-  h+=rvSub("Protesetype (én per kjeve)")+rvRow(types.map(function(ty,ti){return rvChip(ty,st.types.indexOf(ty)>=0,"p-type:"+ti);}).join(""));
+  h+=rvSub("Protesetype (én per kjeve)")+rvRow(types.map(function(ty,ti){return rvChip(ty,st.types.indexOf(ty)>=0,"p-type:"+ti);}).join("")+(!st.types.length?'<span style="font-size:13px;font-weight:600;color:'+AMBER+';">← Må velges</span>':""));
   RV.opt.ptypes=types;
   h+=rvSub("Immediat")+rvRow(rvChip("Nei",!st.imm,"p-imm:0")+rvChip("Ja",st.imm,"p-imm:1"));
   var needJaw=st.types.some(function(ty){var t=rvProtProduct(ty,st.imm);return t&&tmplNeedsY(t);});
-  if(needJaw)h+=rvSub("Kjeve")+rvRow([["okj","OKJ"],["ukj","UKJ"],["okj+ukj","Begge"]].map(function(j){return rvChip(j[1],st.jaw===j[0],"p-jaw:"+j[0]);}).join(""));
+  if(needJaw)h+=rvSub("Kjeve")+rvRow([["okj","OKJ"],["ukj","UKJ"],["okj+ukj","Begge"]].map(function(j){return rvChip(j[1],st.jaw===j[0],"p-jaw:"+j[0]);}).join("")+(!st.jaw?'<span style="font-size:13px;font-weight:600;color:'+AMBER+';">← Må velges</span>':""));
   var isVit=st.types.some(function(ty){return /vitallium/i.test(ty);});
   // feste (kombinasjonsarbeid): patrisen sitter på krone/bro, matrisen i protesen
   var fl=rvTmpls("protese","tillegg");RV.opt.pfeste=fl;
